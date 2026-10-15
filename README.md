@@ -87,3 +87,8 @@ Create other branches from an updated `main` and open pull requests on GitHub. F
 ## Scope note
 
 This is an educational starter, not a production-ready e-commerce service. It has no database, authentication, real payment integration, web API, or concurrency-safe inventory management.
+
+## Trial Sprint
+
+Practising Git branches, commits,
+pull requests, code review, and merging.
