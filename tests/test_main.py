@@ -49,3 +49,31 @@ def test_checkout_rejects_empty_cart():
 def test_invalid_quantity_is_rejected():
     with pytest.raises(ValueError, match="greater than zero"):
         sample_store().add_to_cart(1, 0)
+
+
+@pytest.mark.parametrize("quantity", [0, -1, 1.5, "2", True])
+def test_cart_rejects_non_positive_or_non_integer_quantities(quantity):
+    with pytest.raises(ValueError, match="greater than zero"):
+        sample_store().add_to_cart(1, quantity)
+
+
+def test_update_quantity_and_item_subtotal():
+    store = sample_store()
+    store.add_to_cart(1, 1)
+    store.update_cart_quantity(1, 3)
+    assert store.cart_items() == [{
+        "book_id": 1, "title": "The Alchemist", "unit_price": 299.0,
+        "quantity": 3, "line_total": 897.0,
+    }]
+    assert store.cart_total() == 897.0
+
+
+def test_update_quantity_rejects_stock_overage_and_remove_clears_item():
+    store = sample_store()
+    store.add_to_cart(1, 1)
+    with pytest.raises(ValueError, match="exceeds available stock"):
+        store.update_cart_quantity(1, 9)
+    store.remove_from_cart(1)
+    assert store.cart == {}
+    with pytest.raises(ValueError, match="cart is empty"):
+        store.checkout()

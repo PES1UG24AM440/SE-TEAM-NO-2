@@ -29,7 +29,7 @@ class Bookstore:
 
     def add_to_cart(self, book_id: int, quantity: int = 1) -> None:
         """Add a positive quantity if the book exists and enough stock is available."""
-        if quantity <= 0:
+        if isinstance(quantity, bool) or not isinstance(quantity, int) or quantity <= 0:
             raise ValueError("Quantity must be greater than zero.")
         book = self.books.get(book_id)
         if book is None:
@@ -38,6 +38,35 @@ class Bookstore:
         if new_quantity > book.stock:
             raise ValueError("Requested quantity exceeds available stock.")
         self.cart[book_id] = new_quantity
+
+    def update_cart_quantity(self, book_id: int, quantity: int) -> None:
+        """Replace a cart quantity after validating the book and available stock."""
+        if isinstance(quantity, bool) or not isinstance(quantity, int) or quantity <= 0:
+            raise ValueError("Quantity must be greater than zero.")
+        book = self.books.get(book_id)
+        if book is None:
+            raise ValueError(f"Book ID {book_id} was not found.")
+        if book_id not in self.cart:
+            raise ValueError(f"Book ID {book_id} is not in the cart.")
+        if quantity > book.stock:
+            raise ValueError("Requested quantity exceeds available stock.")
+        self.cart[book_id] = quantity
+
+    def remove_from_cart(self, book_id: int) -> None:
+        """Remove one item from the cart; a missing item is reported clearly."""
+        if book_id not in self.cart:
+            raise ValueError(f"Book ID {book_id} is not in the cart.")
+        del self.cart[book_id]
+
+    def cart_items(self) -> list[dict]:
+        """Return current cart items with names and line subtotals."""
+        return [{
+            "book_id": book_id,
+            "title": self.books[book_id].title,
+            "unit_price": self.books[book_id].price,
+            "quantity": quantity,
+            "line_total": round(self.books[book_id].price * quantity, 2),
+        } for book_id, quantity in self.cart.items()]
 
     def cart_total(self) -> float:
         """Calculate the total price of items currently in the cart."""
@@ -89,14 +118,14 @@ def main() -> None:
     print("Welcome to Bookstore Starter")
     print("Available books:")
     for book in store.search_books():
-        print(f"{book.book_id}. {book.title} — {book.author} — ₹{book.price:.2f} "
+        print(f"{book.book_id}. {book.title} - {book.author} - INR {book.price:.2f} "
               f"({book.stock} in stock)")
 
     print("\nDemo: adding one copy of Atomic Habits to the cart.")
     store.add_to_cart(2)
-    print(f"Cart total: ₹{store.cart_total():.2f}")
+    print(f"Cart total: INR {store.cart_total():.2f}")
     order = store.checkout()
-    print(f"Order {order['status']}: total ₹{order['total']:.2f}")
+    print(f"Order {order['status']}: total INR {order['total']:.2f}")
     print("This is an in-memory educational starter, not a production payment system.")
 
 
