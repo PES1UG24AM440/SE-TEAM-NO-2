@@ -42,3 +42,24 @@ describe('cart', () => {
     expect(screen.getByRole('button', { name: 'Increase The Alchemist quantity' })).toBeDisabled();
   });
 });
+
+describe('checkout', () => {
+  it('collects required shipping details and surfaces service failures', async () => {
+    const user = userEvent.setup(); render(<App />);
+    await screen.findByRole('heading', { name: 'The Alchemist' });
+    await user.click(screen.getByRole('button', { name: /Add to bag/ }));
+    await user.click(screen.getByRole('button', { name: /Shopping bag/ }));
+    await user.click(screen.getByRole('button', { name: /Continue to checkout/ }));
+    expect(screen.getByLabelText('Full name')).toBeRequired();
+    expect(screen.getByLabelText('Email address')).toHaveAttribute('type', 'email');
+    await user.type(screen.getByLabelText('Full name'), 'Sam Reader');
+    await user.type(screen.getByLabelText('Email address'), 'sam@example.com');
+    await user.type(screen.getByLabelText('Street address'), '1 Book Lane');
+    await user.type(screen.getByLabelText('City'), 'Bengaluru');
+    await user.type(screen.getByLabelText('State / region'), 'Karnataka');
+    await user.type(screen.getByLabelText('Postal code'), '560001');
+    await user.type(screen.getByLabelText('Country'), 'India');
+    await user.click(screen.getByRole('button', { name: 'Place order' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Order service is not connected yet');
+  });
+});
