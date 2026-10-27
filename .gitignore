@@ -2,7 +2,6 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
-node_modules/
 
 # Virtual environments
 .venv/
@@ -23,6 +22,3 @@ Thumbs.db
 build/
 dist/
 *.egg-info/
-*.db
-frontend/test-results/
-frontend/playwright-report/
