@@ -1,4 +1,4 @@
-﻿package com.bookstore.config;
+package com.bookstore.config;
 
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;

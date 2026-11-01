@@ -1,4 +1,4 @@
-﻿package com.bookstore.books;
+package com.bookstore.books;
 
 import jakarta.persistence.*;
 import java.math.BigDecimal;
