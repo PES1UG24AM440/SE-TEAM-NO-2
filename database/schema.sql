@@ -7,9 +7,11 @@ USE online_bookstore;
 
 -- 1. BOOKS
 CREATE TABLE IF NOT EXISTS books (
-    id INT PRIMARY KEY AUTO_INCREMENT,
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
     title VARCHAR(200) NOT NULL,
     author VARCHAR(160) NOT NULL,
+    category VARCHAR(100) NOT NULL DEFAULT 'Uncategorized',
+    description TEXT NULL,
     price DECIMAL(10,2) NOT NULL,
     stock INT NOT NULL,
 
@@ -46,7 +48,7 @@ CREATE TABLE IF NOT EXISTS orders (
 CREATE TABLE IF NOT EXISTS order_items (
     id INT PRIMARY KEY AUTO_INCREMENT,
     order_id VARCHAR(36) NOT NULL,
-    book_id INT NOT NULL,
+    book_id BIGINT NOT NULL,
 
     title VARCHAR(200) NOT NULL,
     quantity INT NOT NULL,
@@ -82,11 +84,15 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
 );
 
 -- 5. SEED BOOKS
-INSERT INTO books (id, title, author, price, stock)
+INSERT INTO books (id, title, author, category, description, price, stock)
 VALUES
-    (1, 'The Alchemist', 'Paulo Coelho', 299.00, 8),
-    (2, 'Atomic Habits', 'James Clear', 450.00, 5),
-    (3, 'Clean Code', 'Robert C. Martin', 650.00, 3),
-    (4, 'The Hobbit', 'J. R. R. Tolkien', 399.00, 6)
+    (1, 'The Alchemist', 'Paulo Coelho', 'Fiction',
+     'A philosophical novel about following your dreams.', 299.00, 8),
+    (2, 'Atomic Habits', 'James Clear', 'Self-Help',
+     'A practical guide to building good habits.', 450.00, 5),
+    (3, 'Clean Code', 'Robert C. Martin', 'Technology',
+     'A guide to writing clean and maintainable software.', 650.00, 3),
+    (4, 'The Hobbit', 'J. R. R. Tolkien', 'Fantasy',
+     'A fantasy adventure about Bilbo Baggins.', 399.00, 6)
 ON DUPLICATE KEY UPDATE
     title = VALUES(title);
