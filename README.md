@@ -12,6 +12,7 @@ A beginner-friendly starting point for an online bookstore assignment. It demons
 ├── src/
 │   ├── __init__.py
 │   └── main.py
+├── backend/       # Spring Boot service (Java 25)
 ├── tests/
 │   ├── __init__.py
 │   └── test_main.py
@@ -26,6 +27,7 @@ A beginner-friendly starting point for an online bookstore assignment. It demons
 - Python 3.10 or newer
 - Git (for version control)
 - A GitHub repository (for pull requests and CI)
+- Java 25 and Maven 3.9+ (optional, for the Spring Boot service in `backend/`)
 
 ## Setup on Windows
 
@@ -86,11 +88,22 @@ Create other branches from an updated `main` and open pull requests on GitHub. F
 
 ## Scope note
 
-The original CLI remains an educational in-memory starter. The Member 4 API described below adds local persistence and transaction-protected checkout, but this project is not a production-ready e-commerce service: customer authentication, TLS deployment, order history/cancellation, and real payment integration are not implemented here.
+The original CLI remains an educational in-memory starter. The Member 4 API described below adds local persistence and transaction-protected checkout. The repository also contains a separate Spring Boot Java service in `backend/`. This project is not a production-ready e-commerce service: customer authentication, TLS deployment, order history/cancellation, and real payment integration are not implemented here.
+
+## Spring Boot Java backend
+
+The backend targets Java 25 and uses Spring Boot 3.5.16. Install a Java 25 JDK and Maven 3.9 or newer, then run from the repository root:
+
+```powershell
+cd backend
+mvn test
+```
+
+The Maven test lifecycle compiles the service and any available tests. No Java test sources currently exist, so the current test phase succeeds with zero tests discovered. The backend CI job runs this command with Temurin Java 25. Database-backed runtime use also requires a configured MySQL database; connection settings are read from `DB_URL` and `DB_USERNAME` and the schema must match the JPA entities.
 
 ## Member 4 cart, checkout, and order API
 
-The original Python CLI remains available. The Member 4 implementation adds a React/Vite interface in `frontend/` and a Python FastAPI service in `src/api.py`. FastAPI is used as the lightweight Python backend equivalent: no Java/Spring service existed in this repository, and the test plan allows an approved equivalent. The UI calls the live API; it is not a disconnected demo.
+The original Python CLI remains available. The Member 4 implementation adds a React/Vite interface in `frontend/` and a Python FastAPI service in `src/api.py`. FastAPI is the lightweight Python API used by that interface; the separate Java/Spring service is documented above. The UI calls the live Python API; it is not a disconnected demo.
 
 ### Start locally
 
@@ -136,6 +149,8 @@ The optional `Idempotency-Key` header makes a repeated checkout return the origi
 The payment simulator has deterministic `success` and `failure` scenarios and accepts no card fields. A failed simulation creates no confirmed order and leaves inventory unchanged. Shipping, tax, and discount are configurable with `BOOKSTORE_SHIPPING`, `BOOKSTORE_TAX_RATE`, and `BOOKSTORE_DISCOUNT`; all default to zero because the SRS leaves those rules for Product Owner confirmation.
 
 ### Data and architecture notes
+
+`database/schema.sql` defines the separate `customer_orders` MySQL data model and is not used by the current FastAPI service.
 
 The service uses SQLAlchemy tables for books, orders, order items, and idempotency keys. Local development defaults to a persistent SQLite file (`bookstore.db`); set `DATABASE_URL` to a MySQL 8 SQLAlchemy URL (for example `mysql+pymysql://user:password@host:3306/bookstore`) for the SRS deployment database. `docs/mysql_schema.sql` is the matching MySQL schema. A conditional stock update runs inside the same transaction as order and order-item creation, with nonnegative stock and price constraints. SQLite requests are serialized within one API process for deterministic local concurrency behavior; MySQL uses transactional conditional updates. A MySQL 8 service is installed and running locally, but a root connection without a password was denied and the intended isolated bookstore test database/credentials are not identified. The MySQL migration and concurrency path therefore remain unverified.
 

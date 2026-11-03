@@ -26,7 +26,8 @@ from sqlalchemy import CheckConstraint, ForeignKey, Integer, Numeric, String, cr
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 from typing_extensions import Annotated
-
+from dotenv import load_dotenv
+load_dotenv()
 
 def _database_url() -> str:
     # Persistent local database by default; MySQL is selected through env.

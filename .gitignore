@@ -26,3 +26,6 @@ dist/
 *.db
 frontend/test-results/
 frontend/playwright-report/
+
+# Maven build output
+backend/target/
