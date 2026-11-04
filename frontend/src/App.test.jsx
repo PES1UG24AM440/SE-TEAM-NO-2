@@ -5,7 +5,8 @@ import App from './App.jsx';
 import { getBooks, placeOrder } from './api.js';
 
 vi.mock('./api.js', () => ({ getBooks: vi.fn(), placeOrder: vi.fn() }));
-const fixture = [{ id: 1, title: 'The Alchemist', author: 'Paulo Coelho', price: 299, stock: 2 }];
+const fixture = [{ id: 1, title: 'The Alchemist', author: 'Paulo Coelho', category: 'Fiction', description: 'A shepherd follows his dream.', price: 299, stock: 2 }];
+const habits = { id: 2, title: 'Atomic Habits', author: 'James Clear', category: 'Self-help', description: 'Tiny changes.', price: 499, stock: 5 };
 
 beforeEach(() => { vi.clearAllMocks(); getBooks.mockResolvedValue(fixture); });
 
@@ -53,5 +54,36 @@ describe('bookstore cart and checkout', () => {
     await user.click(screen.getByRole('button', { name: /Place order/ }));
     expect(await screen.findByRole('status')).toHaveTextContent('Only 0 copies remain.');
     expect(screen.queryByText('Thank you for your order.')).not.toBeInTheDocument();
+  });
+
+  it('shows category and description and sends search and category filters to the API', async () => {
+    const user = userEvent.setup(); render(<App />);
+    await screen.findByRole('heading', { name: 'The Alchemist' });
+    expect(screen.getByText('A shepherd follows his dream.')).toBeInTheDocument();
+    getBooks.mockResolvedValue([habits]);
+    await user.click(screen.getByRole('button', { name: 'Fiction' }));
+    expect(await screen.findByRole('heading', { name: 'Atomic Habits' })).toBeInTheDocument();
+    expect(getBooks).toHaveBeenLastCalledWith({ q: '', category: 'Fiction' });
+    await user.type(screen.getByLabelText('Search books'), 'habit');
+    await vi.waitFor(() => expect(getBooks).toHaveBeenLastCalledWith({ q: 'habit', category: 'Fiction' }));
+  });
+
+  it('keeps a bagged book in the cart when a filter hides it from the shelf', async () => {
+    const user = userEvent.setup(); render(<App />);
+    await screen.findByRole('heading', { name: 'The Alchemist' });
+    await user.click(screen.getByRole('button', { name: /Add to bag/ }));
+    getBooks.mockResolvedValue([habits]);
+    await user.click(screen.getByRole('button', { name: 'Fiction' }));
+    await screen.findByRole('heading', { name: 'Atomic Habits' });
+    await user.click(screen.getByRole('button', { name: /Shopping bag/ }));
+    expect(screen.getByRole('heading', { name: 'The Alchemist' })).toBeInTheDocument();
+  });
+
+  it('shows a friendly message when no books match', async () => {
+    const user = userEvent.setup(); render(<App />);
+    await screen.findByRole('heading', { name: 'The Alchemist' });
+    getBooks.mockResolvedValue([]);
+    await user.type(screen.getByLabelText('Search books'), 'zzzz');
+    expect(await screen.findByText(/No books match your search/)).toBeInTheDocument();
   });
 });
