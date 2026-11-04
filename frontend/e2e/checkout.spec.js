@@ -14,7 +14,7 @@ test('customer can edit a cart, validate checkout, place an order and see API fa
   await page.goto('/');
   const alchemistCard = page.locator('.book-card').filter({ hasText: 'The Alchemist' });
   await expect(alchemistCard).toBeVisible();
-  const stockBefore = (await (await request.get('http://127.0.0.1:8000/api/books')).json()).find((book) => book.id === 1).stock;
+  const stockBefore = (await (await request.get('http://127.0.0.1:8080/api/books')).json()).find((book) => book.id === 1).stock;
   expect(stockBefore).toBeGreaterThan(1);
 
   await alchemistCard.getByRole('button', { name: /Add to bag/ }).click();
@@ -45,11 +45,11 @@ test('customer can edit a cart, validate checkout, place an order and see API fa
   await expect(page.getByText('Thank you for your order.')).toBeVisible();
   await expect(page.getByText(order.order_id)).toBeVisible();
   await expect(page.locator('.confirmation-card')).toContainText(`₹${order.total.toFixed(2)}`);
-  const stockAfter = (await (await request.get('http://127.0.0.1:8000/api/books')).json()).find((book) => book.id === 1).stock;
+  const stockAfter = (await (await request.get('http://127.0.0.1:8080/api/books')).json()).find((book) => book.id === 1).stock;
   expect(stockAfter).toBe(stockBefore - 1);
 
-  const beforeFailure = (await (await request.get('http://127.0.0.1:8000/api/books')).json()).find((book) => book.id === 2).stock;
-  const insufficient = await request.post('http://127.0.0.1:8000/api/orders', { data: {
+  const beforeFailure = (await (await request.get('http://127.0.0.1:8080/api/books')).json()).find((book) => book.id === 2).stock;
+  const insufficient = await request.post('http://127.0.0.1:8080/api/orders', { headers: { 'Idempotency-Key': `e2e-${Date.now()}` }, data: {
     items: [{ book_id: 3, quantity: 4 }], customer: {
       name: 'A Reader', email: 'reader@example.com', address_line: '1 Story Lane', city: 'Mysuru',
       state: 'Karnataka', postal_code: '570001', country: 'India',
@@ -69,6 +69,6 @@ test('customer can edit a cart, validate checkout, place an order and see API fa
   expect(failureResponse.status()).toBe(402);
   await expect(page.getByRole('status')).toContainText('payment simulator declined');
   await expect(page.getByText('Thank you for your order.')).toHaveCount(0);
-  const afterFailure = (await (await request.get('http://127.0.0.1:8000/api/books')).json()).find((book) => book.id === 2).stock;
+  const afterFailure = (await (await request.get('http://127.0.0.1:8080/api/books')).json()).find((book) => book.id === 2).stock;
   expect(afterFailure).toBe(beforeFailure);
 });
