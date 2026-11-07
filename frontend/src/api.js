@@ -25,7 +25,14 @@ async function request(path, options = {}) {
   }
 }
 
-export const getBooks = () => request('/api/books');
+export const getBooks = ({ q = '', category = '' } = {}) => {
+  const params = new URLSearchParams();
+  if (q.trim()) params.set('q', q.trim());
+  if (category && category !== 'All') params.set('category', category);
+  const query = params.toString();
+  return request(`/api/books${query ? `?${query}` : ''}`);
+};
+export const getBook = (id) => request(`/api/books/${encodeURIComponent(id)}`);
 export const placeOrder = (order, idempotencyKey) => request('/api/orders', {
   method: 'POST', body: JSON.stringify(order), headers: { 'Idempotency-Key': idempotencyKey },
 });

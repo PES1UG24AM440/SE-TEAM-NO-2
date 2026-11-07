@@ -103,9 +103,16 @@ The Maven test lifecycle runs the order transaction regression suite against an 
 
 ## Member 4 cart, checkout, and order API
 
-The original Python CLI remains available. The Member 4 implementation adds a React/Vite interface in `frontend/` and a Python FastAPI service in `src/api.py`. FastAPI is the lightweight Python API used by that interface; the separate Java/Spring service is documented above. The UI calls the live Python API; it is not a disconnected demo.
+The original Python CLI remains available. The Member 4 implementation adds a React/Vite interface in `frontend/`. The interface now calls the Spring Boot service in `backend/` (port 8080) through the Vite `/api` proxy; the Python FastAPI service in `src/api.py` is kept as a reference implementation of the same contract.
 
-### Start locally
+### Run the frontend against the Spring Boot backend
+
+1. Start MySQL with the `online_bookstore` schema, then in `backend/` run `DB_URL`, `DB_USERNAME` and `DB_PASSWORD` exports and `mvn spring-boot:run` (serves `http://127.0.0.1:8080`).
+2. In `frontend/` run `npm install` and `npm run dev`, then open `http://127.0.0.1:5173`.
+
+`GET /api/books` also accepts `q` (title, author or description) and `category`; `GET /api/books/{id}` returns one book. The Spring service requires an `Idempotency-Key` header on `POST /api/orders` (the React app sends one automatically). Books now include `category` and `description`.
+
+### Start the Python reference API locally
 
 In one PowerShell window, from the repository root:
 
