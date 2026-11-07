@@ -73,7 +73,7 @@ public class OrderService {
 
     @Transactional(readOnly = true)
     public OrderResponse findExistingOrder(String key) {
-        return idempotencyRepository.findById(Objects.requireNonNull(key))
+        return idempotencyRepository.findByKey(Objects.requireNonNull(key))
             .map(idempotencyKey -> Objects.requireNonNull(idempotencyKey).getOrder())
             .map(this::toResponse)
             .orElse(null);

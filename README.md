@@ -99,7 +99,7 @@ cd backend
 mvn test
 ```
 
-The Maven test lifecycle compiles the service and any available tests. No Java test sources currently exist, so the current test phase succeeds with zero tests discovered. The backend CI job runs this command with Temurin Java 25. Database-backed runtime use also requires a configured MySQL database; connection settings are read from `DB_URL` and `DB_USERNAME` and the schema must match the JPA entities.
+The Maven test lifecycle runs the order transaction regression suite against an isolated in-memory H2 database. The suite verifies successful stock deduction, payment-failure behavior, rollback when any line has insufficient stock, and idempotent retries, including persisted order, item, and key records. The backend CI job runs this command with Temurin Java 25. Database-backed runtime use still requires a configured MySQL database; connection settings are read from `DB_URL` and `DB_USERNAME` and the schema must match the JPA entities.
 
 ## Member 4 cart, checkout, and order API
 
