@@ -104,7 +104,6 @@ public class OrderCreationService {
 
         Order order = new Order();
         order.setId(UUID.randomUUID().toString());
-        order.setStatus("CONFIRMED");
 
         CustomerDetailsRequest customer = request.customer();
 
@@ -189,7 +188,7 @@ public class OrderCreationService {
 
         return new OrderResponse(
             order.getId(),
-            order.getStatus(),
+            order.getStatus().name(),
             order.getSubtotal(),
             order.getShipping(),
             order.getTax(),

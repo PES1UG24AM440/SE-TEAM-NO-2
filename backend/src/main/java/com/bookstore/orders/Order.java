@@ -13,8 +13,9 @@ public class Order {
     @Column(length = 36)
     private String id;
 
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
-    private String status;
+    private OrderStatus status = OrderStatus.CONFIRMED;
 
     @Column(name = "customer_name", nullable = false, length = 120)
     private String customerName;
@@ -61,7 +62,7 @@ public class Order {
     protected Order() {}
 
     public String getId() { return id; }
-    public String getStatus() { return status; }
+    public OrderStatus getStatus() { return status; }
     public String getCustomerName() { return customerName; }
     public String getEmail() { return email; }
     public String getPhone() { return phone; }
@@ -78,7 +79,6 @@ public class Order {
     public List<OrderItem> getItems() { return items; }
 
     public void setId(String id) { this.id = id; }
-    public void setStatus(String status) { this.status = status; }
     public void setCustomerName(String customerName) { this.customerName = customerName; }
     public void setEmail(String email) { this.email = email; }
     public void setPhone(String phone) { this.phone = phone; }
@@ -92,6 +92,18 @@ public class Order {
     public void setTax(BigDecimal tax) { this.tax = tax; }
     public void setDiscount(BigDecimal discount) { this.discount = discount; }
     public void setTotal(BigDecimal total) { this.total = total; }
+
+    public void transitionTo(OrderStatus nextStatus) {
+        if (!status.canTransitionTo(nextStatus)) {
+            throw new OrderException(
+                409,
+                "invalid_status_transition",
+                "Order status cannot transition from " + status + " to " + nextStatus + "."
+            );
+        }
+
+        status = nextStatus;
+    }
 
     public void addItem(OrderItem item) {
         items.add(item);
