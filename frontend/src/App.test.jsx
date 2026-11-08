@@ -129,6 +129,21 @@ describe('saved books and wishlist', () => {
     expect(screen.getByText('2 in stock')).toBeInTheDocument();
   });
 
+  it('ignores malformed or incomplete saved data without breaking the catalogue', async () => {
+    const logError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    window.localStorage.setItem('fieldnotes-books-wishlist', JSON.stringify([
+      null,
+      { id: 2, title: 'Incomplete book' },
+    ]));
+
+    render(<App />);
+    await screen.findByRole('heading', { name: 'The Alchemist' });
+
+    expect(screen.getByRole('button', { name: 'Wishlist, 0 saved books' })).toBeInTheDocument();
+    expect(JSON.parse(window.localStorage.getItem('fieldnotes-books-wishlist'))).toEqual([]);
+    logError.mockRestore();
+  });
+
   it('keeps wishlist status synchronized between book cards and the details view', async () => {
     const user = userEvent.setup(); render(<App />);
     await screen.findByRole('heading', { name: 'The Alchemist' });
