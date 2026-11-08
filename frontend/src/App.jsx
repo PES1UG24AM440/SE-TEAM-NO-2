@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { getBooks, placeOrder } from './api.js';
+import { clearCart, getBooks, getCart, placeOrder, removeCartItem, updateCartItem } from './api.js';
 
 const currency = (value) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(value);
 const emptyForm = { name: '', email: '', phone: '', address_line: '', city: '', state: '', postal_code: '', country: '' };
@@ -16,11 +16,21 @@ function validate(form) {
 
 export default function App() {
   const [books, setBooks] = useState([]);
-  const [known, setKnown] = useState({});
   const [categories, setCategories] = useState([]);
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('All');
-  const [cart, setCart] = useState({});
+  const [cartId] = useState(() => {
+    const saved = localStorage.getItem('bookstore-cart-id');
+    if (saved) return saved;
+    const id = crypto.randomUUID();
+    localStorage.setItem('bookstore-cart-id', id);
+    return id;
+  });
+  const [cartItems, setCartItems] = useState([]);
+  const [cartSubtotal, setCartSubtotal] = useState(0);
+  const [cartLoading, setCartLoading] = useState(true);
+  const [cartError, setCartError] = useState('');
+  const [cartBusy, setCartBusy] = useState(false);
   const [view, setView] = useState('shop');
   const [form, setForm] = useState(emptyForm);
   const [errors, setErrors] = useState({});
@@ -31,9 +41,19 @@ export default function App() {
   const [confirmation, setConfirmation] = useState(null);
 
   const remember = useCallback((list) => {
-    setKnown((current) => ({ ...current, ...Object.fromEntries(list.map((book) => [book.id, book])) }));
     setCategories((current) => [...new Set([...current, ...list.map((book) => book.category).filter(Boolean)])].sort());
   }, []);
+
+  const refreshCart = useCallback(() => {
+    setCartLoading(true);
+    return getCart(cartId).then((result) => {
+      setCartItems(result.items);
+      setCartSubtotal(result.subtotal);
+      setCartError('');
+    }).catch((error) => setCartError(error.message)).finally(() => setCartLoading(false));
+  }, [cartId]);
+
+  useEffect(() => { refreshCart(); }, [refreshCart]);
 
   useEffect(() => {
     let active = true;
@@ -46,29 +66,41 @@ export default function App() {
     return () => { active = false; clearTimeout(timer); };
   }, [query, category, remember]);
 
-  // Cart lines are looked up in `known` so items stay in the bag when a search or category filter hides them from the shelf.
-  const items = useMemo(() => Object.entries(cart).map(([id, quantity]) => ({
-    book: known[id], quantity,
-  })).filter(({ book }) => book), [known, cart]);
-  const total = items.reduce((sum, { book, quantity }) => sum + book.price * quantity, 0);
+  // Cart lines come from the persistent API and stay available across catalogue filters.
+  const items = useMemo(() => cartItems.map((line) => ({
+    book: { id: line.book_id, title: line.title, author: line.author, price: line.unit_price, stock: line.stock },
+    quantity: line.quantity, lineTotal: line.line_total,
+  })), [cartItems]);
+  const total = cartSubtotal;
 
-  function add(book) {
+  async function add(book) {
     setNotice('');
-    const quantity = cart[book.id] || 0;
+    if (cartBusy) return;
+    const quantity = cartItems.find((line) => line.book_id === book.id)?.quantity || 0;
     if (quantity >= book.stock) { setNotice(`Only ${book.stock} ${book.stock === 1 ? 'copy is' : 'copies are'} available for ${book.title}.`); return; }
-    setCart((current) => ({ ...current, [book.id]: quantity + 1 }));
-    setNotice(`${book.title} added to your cart.`);
+    setCartBusy(true);
+    try { const result = await updateCartItem(cartId, book.id, quantity + 1); setCartItems(result.items); setCartSubtotal(result.subtotal); setNotice(`${book.title} added to your cart.`); }
+    catch (error) { setNotice(error.message); }
+    finally { setCartBusy(false); }
   }
-  function change(book, delta) {
+  async function change(book, delta) {
     setNotice('');
-    const current = cart[book.id] || 0;
+    if (cartBusy) return;
+    const current = cartItems.find((line) => line.book_id === book.id)?.quantity || 0;
     const next = current + delta;
+    if (next < 1) return;
     if (next > book.stock) { setNotice(`Only ${book.stock} ${book.stock === 1 ? 'copy is' : 'copies are'} available for ${book.title}.`); return; }
-    setCart((value) => { const updated = { ...value }; if (next <= 0) delete updated[book.id]; else updated[book.id] = next; return updated; });
+    setCartBusy(true);
+    try { const result = await updateCartItem(cartId, book.id, next); setCartItems(result.items); setCartSubtotal(result.subtotal); }
+    catch (error) { setNotice(error.message); }
+    finally { setCartBusy(false); }
   }
-  function remove(book) {
-    setCart((current) => { const updated = { ...current }; delete updated[book.id]; return updated; });
-    setNotice(`${book.title} removed from your cart.`);
+  async function remove(book) {
+    if (cartBusy) return;
+    setCartBusy(true);
+    try { const result = await removeCartItem(cartId, book.id); setCartItems(result.items); setCartSubtotal(result.subtotal); setNotice(`${book.title} removed from your cart.`); }
+    catch (error) { setNotice(error.message); }
+    finally { setCartBusy(false); }
   }
   function startCheckout() { setErrors({}); setNotice(''); setView('checkout'); }
   function submit(event) {
@@ -81,16 +113,17 @@ export default function App() {
     const key = crypto.randomUUID();
     placeOrder({ items: items.map(({ book, quantity }) => ({ book_id: book.id, quantity })), customer: form, payment_scenario: paymentScenario }, key)
       .then((order) => {
-        setConfirmation(order); setCart({}); setView('confirmation'); setForm(emptyForm);
-        return getBooks({ q: query, category }).then((list) => { setBooks(list); remember(list); }).catch(() => {});
+        setConfirmation(order); setView('confirmation'); setForm(emptyForm);
+        return clearCart(cartId).then((result) => { setCartItems(result.items); setCartSubtotal(result.subtotal); }).catch(() => {});
       })
+      .then(() => getBooks({ q: query, category }).then((list) => { setBooks(list); remember(list); }).catch(() => {}))
       .catch((error) => setNotice(error.message))
       .finally(() => setSubmitting(false));
   }
 
   return <div className="site-shell">
     <header className="topbar"><a className="brand" href="#shop" onClick={() => setView('shop')} aria-label="Fieldnotes Books home"><span className="brand-mark">F</span><span>fieldnotes<span className="brand-light">books</span></span></a>
-      <nav aria-label="Main navigation"><button className={view === 'shop' ? 'nav-link active' : 'nav-link'} onClick={() => setView('shop')}>Browse books</button><button className="cart-link" onClick={() => setView('cart')} aria-label={`Shopping bag, ${items.reduce((n, item) => n + item.quantity, 0)} items`}><span>Bag</span><span className="cart-count">{items.reduce((n, item) => n + item.quantity, 0)}</span></button></nav>
+      <nav aria-label="Main navigation"><button className={view === 'shop' ? 'nav-link active' : 'nav-link'} onClick={() => setView('shop')}>Browse books</button><button className="cart-link" onClick={() => setView('cart')} aria-label={`Shopping bag, ${cartItems.reduce((n, item) => n + item.quantity, 0)} items`}><span>Bag</span><span className="cart-count">{cartItems.reduce((n, item) => n + item.quantity, 0)}</span></button></nav>
     </header>
     <main>
       <section className="hero"><p className="eyebrow">A good book finds its way</p><h1>Stories for the<br /><em>in-between moments.</em></h1><p className="hero-copy">A small, thoughtful shelf of books to keep you curious.</p><div className="hero-stamp" aria-hidden="true">READ<br />MORE</div></section>
@@ -101,8 +134,8 @@ export default function App() {
           <div className="category-filter" role="group" aria-label="Filter by category">{['All', ...categories].map((name) => <button key={name} className={name === category ? 'chip active' : 'chip'} aria-pressed={name === category} onClick={() => setCategory(name)}>{name}</button>)}</div></div>
         {books.length === 0 ? <p className="empty-catalog">{query || category !== 'All' ? 'No books match your search. Try a different word or category.' : 'The catalogue is unavailable right now. Please refresh and try again.'}</p> : <div className="book-grid">{books.map((book, index) => <article className="book-card" key={book.id}><div className={`cover cover-${index % 4}`} aria-hidden="true"><span className="cover-lines">{book.title.split(' ').slice(0, 3).join('\n')}</span><span className="cover-author">{book.author}</span><span className="cover-orbit" /></div><div className="book-meta"><div>{book.category && <span className="category-tag">{book.category}</span>}<h3>{book.title}</h3><p>{book.author}</p>{book.description && <p className="book-description">{book.description}</p>}</div><span className="price">{currency(book.price)}</span></div><div className="book-actions"><span className={book.stock > 0 ? 'stock' : 'stock sold-out'}>{book.stock > 0 ? `${book.stock} in stock` : 'Out of stock'}</span><button className="add-button" onClick={() => add(book)} disabled={book.stock === 0}>Add to bag <span aria-hidden="true">+</span></button></div></article>)}</div>}
       </section>}
-      {!loading && view === 'cart' && <section className="checkout-layout"><div><p className="eyebrow">Your selection</p><h2>Your bag</h2>{items.length === 0 ? <div className="empty-state"><span className="empty-icon">✳</span><h3>Your bag is waiting for a story.</h3><p>Browse the shelf and add a book you love.</p><button className="primary-button" onClick={() => setView('shop')}>Continue shopping</button></div> : <div className="cart-list">{items.map(({ book, quantity }) => <article className="cart-row" key={book.id}><div className={`mini-cover cover-${book.id % 4}`} aria-hidden="true">{book.title.slice(0, 1)}</div><div className="cart-description"><h3>{book.title}</h3><p>{book.author} · {currency(book.price)} each</p><button className="text-button" onClick={() => remove(book)}>Remove</button></div><div className="quantity" aria-label={`Quantity for ${book.title}`}><button aria-label={`Decrease ${book.title} quantity`} onClick={() => change(book, -1)}>−</button><output aria-label={`${book.title} quantity`}>{quantity}</output><button aria-label={`Increase ${book.title} quantity`} onClick={() => change(book, 1)} disabled={quantity >= book.stock}>+</button></div><strong className="line-total">{currency(book.price * quantity)}</strong></article>)}</div>}</div>
-        {items.length > 0 && <aside className="summary-card"><p className="eyebrow">At a glance</p><h3>Order summary</h3>{items.map(({ book, quantity }) => <div className="summary-line" key={book.id}><span>{book.title} <small>× {quantity}</small></span><span>{currency(book.price * quantity)}</span></div>)}<div className="summary-total"><span>Estimated total</span><strong>{currency(total)}</strong></div><p className="summary-note">Final total is calculated by the bookstore at checkout.</p><button className="primary-button wide" onClick={startCheckout}>Continue to checkout <span aria-hidden="true">→</span></button><button className="back-link" onClick={() => setView('shop')}>← Continue shopping</button></aside>}</section>}
+      {!loading && view === 'cart' && <section className="checkout-layout"><div><p className="eyebrow">Your selection</p><h2>Your bag</h2>{cartLoading ? <p className="loading" role="status">Loading your cart…</p> : cartError ? <div className="empty-state" role="alert"><h3>We couldn’t load your cart.</h3><p>{cartError}</p><button className="primary-button" onClick={refreshCart}>Retry</button></div> : items.length === 0 ? <div className="empty-state"><span className="empty-icon">✳</span><h3>Your bag is waiting for a story.</h3><p>Browse the shelf and add a book you love.</p><button className="primary-button" onClick={() => setView('shop')}>Continue shopping</button></div> : <div className="cart-list">{items.map(({ book, quantity, lineTotal }) => <article className="cart-row" key={book.id}><div className={`mini-cover cover-${book.id % 4}`} aria-hidden="true">{book.title.slice(0, 1)}</div><div className="cart-description"><h3>{book.title}</h3><p>{book.author} · {currency(book.price)} each</p><button className="text-button" onClick={() => remove(book)} disabled={cartBusy}>Remove</button></div><div className="quantity" aria-label={`Quantity for ${book.title}`}><button aria-label={`Decrease ${book.title} quantity`} onClick={() => change(book, -1)} disabled={cartBusy || quantity <= 1}>−</button><output aria-label={`${book.title} quantity`}>{quantity}</output><button aria-label={`Increase ${book.title} quantity`} onClick={() => change(book, 1)} disabled={cartBusy || quantity >= book.stock}>+</button></div><strong className="line-total">{currency(lineTotal)}</strong></article>)}</div>}</div>
+        {!cartLoading && !cartError && items.length > 0 && <aside className="summary-card"><p className="eyebrow">At a glance</p><h3>Order summary</h3>{items.map(({ book, quantity, lineTotal }) => <div className="summary-line" key={book.id}><span>{book.title} <small>× {quantity}</small></span><span>{currency(lineTotal)}</span></div>)}<div className="summary-total"><span>Subtotal · {cartItems.reduce((n, item) => n + item.quantity, 0)} items</span><strong>{currency(total)}</strong></div><p className="summary-note">Calculated by the bookstore server.</p><button className="primary-button wide" onClick={startCheckout}>Continue to checkout <span aria-hidden="true">→</span></button><button className="back-link" onClick={() => setView('shop')}>← Continue shopping</button></aside>}</section>}
       {!loading && view === 'checkout' && <section className="checkout-layout"><div><button className="back-link back-top" onClick={() => setView('cart')}>← Back to your bag</button><p className="eyebrow">Almost yours</p><h2>Delivery details</h2>{items.length === 0 ? <div className="empty-state"><h3>Your bag is empty.</h3><button className="primary-button" onClick={() => setView('shop')}>Browse books</button></div> : <form className="checkout-form" onSubmit={submit} noValidate><div className="form-grid">{Object.keys(emptyForm).map((key) => <label className={`field ${key === 'address_line' ? 'full-field' : ''}`} key={key} htmlFor={`field-${key}`}>{labels[key]}{key !== 'phone' && <span className="required-mark" aria-hidden="true"> *</span>}<input id={`field-${key}`} type={key === 'email' ? 'email' : 'text'} autoComplete={key === 'name' ? 'name' : key === 'email' ? 'email' : key === 'phone' ? 'tel' : key === 'address_line' ? 'street-address' : 'address-level2'} value={form[key]} aria-invalid={Boolean(errors[key])} aria-describedby={errors[key] ? `error-${key}` : undefined} onChange={(event) => setForm((value) => ({ ...value, [key]: event.target.value }))} />{errors[key] && <span className="field-error" id={`error-${key}`}>{errors[key]}</span>}</label>)}</div><fieldset className="payment-choice"><legend>Payment simulator</legend><p>This demo uses a simulator. No card details are requested or stored.</p><label><input type="radio" name="payment" value="success" checked={paymentScenario === 'success'} onChange={() => setPaymentScenario('success')} /> Simulate successful payment</label><label><input type="radio" name="payment" value="failure" checked={paymentScenario === 'failure'} onChange={() => setPaymentScenario('failure')} /> Simulate declined payment</label></fieldset><button className="primary-button submit-button" disabled={submitting}>{submitting ? 'Placing your order…' : `Place order · ${currency(total)}`}</button></form>}</div>
         {items.length > 0 && <aside className="summary-card"><p className="eyebrow">Your books</p><h3>Order summary</h3>{items.map(({ book, quantity }) => <div className="summary-line" key={book.id}><span>{book.title} <small>× {quantity}</small></span><span>{currency(book.price * quantity)}</span></div>)}<div className="summary-total"><span>Estimated total</span><strong>{currency(total)}</strong></div><p className="summary-note">The server confirms the final amount and stock.</p></aside>}</section>}
       {view === 'confirmation' && confirmation && <section className="confirmation"><div className="success-mark" aria-hidden="true">✓</div><p className="eyebrow">All set</p><h2>Thank you for your order.</h2><p>Your payment was approved by the simulator. Your books are on their way to the address you provided.</p><div className="confirmation-card"><div><span>Order ID</span><strong>{confirmation.order_id}</strong></div><div><span>Status</span><strong>{confirmation.status}</strong></div><div><span>Confirmed total</span><strong>{currency(confirmation.total)}</strong></div>{confirmation.items.map((item) => <div key={item.book_id}><span>{item.title} × {item.quantity}</span><strong>{currency(item.line_total)}</strong></div>)}</div><button className="primary-button" onClick={() => setView('shop')}>Back to the bookshelf</button></section>}

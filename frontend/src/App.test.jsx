@@ -2,13 +2,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App.jsx';
-import { getBooks, placeOrder } from './api.js';
+import { clearCart, getBooks, getCart, placeOrder, removeCartItem, updateCartItem } from './api.js';
 
-vi.mock('./api.js', () => ({ getBooks: vi.fn(), placeOrder: vi.fn() }));
+vi.mock('./api.js', () => ({ getBooks: vi.fn(), getCart: vi.fn(), updateCartItem: vi.fn(), removeCartItem: vi.fn(), clearCart: vi.fn(), placeOrder: vi.fn() }));
 const fixture = [{ id: 1, title: 'The Alchemist', author: 'Paulo Coelho', category: 'Fiction', description: 'A shepherd follows his dream.', price: 299, stock: 2 }];
 const habits = { id: 2, title: 'Atomic Habits', author: 'James Clear', category: 'Self-help', description: 'Tiny changes.', price: 499, stock: 5 };
+const line = (quantity, subtotal = 299 * quantity) => ({ items: [{ book_id: 1, title: fixture[0].title, author: fixture[0].author, unit_price: 299, quantity, line_total: subtotal, stock: 2 }], itemCount: quantity, subtotal });
 
-beforeEach(() => { vi.clearAllMocks(); getBooks.mockResolvedValue(fixture); });
+beforeEach(() => {
+  vi.clearAllMocks(); getBooks.mockResolvedValue(fixture); getCart.mockResolvedValue({ items: [], itemCount: 0, subtotal: 0 });
+  updateCartItem.mockImplementation((_cartId, _bookId, quantity) => Promise.resolve(line(quantity)));
+  removeCartItem.mockResolvedValue({ items: [], itemCount: 0, subtotal: 0 });
+  clearCart.mockResolvedValue({ items: [], itemCount: 0, subtotal: 0 });
+});
 
 describe('bookstore cart and checkout', () => {
   it('renders catalogue, adds books and updates quantity subtotal and total', async () => {
@@ -85,5 +91,62 @@ describe('bookstore cart and checkout', () => {
     getBooks.mockResolvedValue([]);
     await user.type(screen.getByLabelText('Search books'), 'zzzz');
     expect(await screen.findByText(/No books match your search/)).toBeInTheDocument();
+  });
+
+  it('loads persistent cart data and displays the server-calculated subtotal', async () => {
+    getCart.mockResolvedValue(line(1, 271.25));
+    render(<App />);
+    await screen.findByRole('heading', { name: 'The Alchemist' });
+    await userEvent.setup().click(screen.getByRole('button', { name: /Shopping bag/ }));
+    expect((await screen.findAllByText('₹271.25')).length).toBeGreaterThan(0);
+    expect(getCart).toHaveBeenCalledWith(expect.any(String));
+  });
+
+  it('shows cart load errors and retries the backend request', async () => {
+    getCart.mockRejectedValueOnce(new Error('Network unavailable.')).mockResolvedValueOnce({ items: [], itemCount: 0, subtotal: 0 });
+    const user = userEvent.setup(); render(<App />);
+    await screen.findByRole('heading', { name: 'The Alchemist' });
+    await user.click(screen.getByRole('button', { name: /Shopping bag/ }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Network unavailable.');
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('Your bag is waiting for a story.')).toBeInTheDocument();
+  });
+
+  it('updates and removes cart lines through the cart API', async () => {
+    const user = userEvent.setup(); render(<App />);
+    await screen.findByRole('heading', { name: 'The Alchemist' });
+    await user.click(screen.getByRole('button', { name: /Add to bag/ }));
+    await user.click(screen.getByRole('button', { name: /Shopping bag/ }));
+    await user.click(screen.getByRole('button', { name: 'Increase The Alchemist quantity' }));
+    expect(updateCartItem).toHaveBeenLastCalledWith(expect.any(String), 1, 2);
+    expect((await screen.findAllByText('₹598.00')).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole('button', { name: 'Decrease The Alchemist quantity' }));
+    expect(updateCartItem).toHaveBeenLastCalledWith(expect.any(String), 1, 1);
+    await user.click(screen.getByRole('button', { name: 'Remove' }));
+    expect(removeCartItem).toHaveBeenCalledWith(expect.any(String), 1);
+    expect(await screen.findByText('Your bag is waiting for a story.')).toBeInTheDocument();
+  });
+
+  it('keeps the item visible when a remove request fails', async () => {
+    getCart.mockResolvedValue(line(1));
+    removeCartItem.mockRejectedValue(new Error('Could not remove item.'));
+    const user = userEvent.setup(); render(<App />);
+    await screen.findByRole('heading', { name: 'The Alchemist' });
+    await user.click(screen.getByRole('button', { name: /Shopping bag/ }));
+    await user.click(await screen.findByRole('button', { name: 'Remove' }));
+    expect(await screen.findByText('Could not remove item.')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'The Alchemist' })).toBeInTheDocument();
+  });
+
+  it('reuses the browser cart ID so the backend cart survives a page remount', async () => {
+    localStorage.removeItem('bookstore-cart-id');
+    const { unmount } = render(<App />);
+    await screen.findByRole('heading', { name: 'The Alchemist' });
+    const firstCartId = localStorage.getItem('bookstore-cart-id');
+    unmount();
+    render(<App />);
+    await screen.findByRole('heading', { name: 'The Alchemist' });
+    expect(localStorage.getItem('bookstore-cart-id')).toBe(firstCartId);
+    expect(getCart).toHaveBeenLastCalledWith(firstCartId);
   });
 });

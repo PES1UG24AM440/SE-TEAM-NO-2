@@ -33,6 +33,12 @@ export const getBooks = ({ q = '', category = '' } = {}) => {
   return request(`/api/books${query ? `?${query}` : ''}`);
 };
 export const getBook = (id) => request(`/api/books/${encodeURIComponent(id)}`);
+export const getCart = (cartId) => request(`/api/cart/${encodeURIComponent(cartId)}`);
+export const updateCartItem = (cartId, bookId, quantity) => request(`/api/cart/${encodeURIComponent(cartId)}/items/${encodeURIComponent(bookId)}`, {
+  method: 'PUT', body: JSON.stringify({ quantity }),
+});
+export const removeCartItem = (cartId, bookId) => request(`/api/cart/${encodeURIComponent(cartId)}/items/${encodeURIComponent(bookId)}`, { method: 'DELETE' });
+export const clearCart = (cartId) => request(`/api/cart/${encodeURIComponent(cartId)}/items`, { method: 'DELETE' });
 export const placeOrder = (order, idempotencyKey) => request('/api/orders', {
   method: 'POST', body: JSON.stringify(order), headers: { 'Idempotency-Key': idempotencyKey },
 });
