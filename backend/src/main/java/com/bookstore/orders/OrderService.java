@@ -5,6 +5,7 @@ import com.bookstore.books.BookRepository;
 import com.bookstore.orders.dto.CreateOrderRequest;
 import com.bookstore.orders.dto.OrderResponse;
 
+import java.util.ArrayList;
 import java.util.Objects;
 
 import org.springframework.dao.DataIntegrityViolationException;
@@ -16,16 +17,19 @@ public class OrderService {
 
     private final BookRepository bookRepository;
     private final IdempotencyKeyRepository idempotencyRepository;
+    private final InventoryMovementRepository inventoryMovementRepository;
     private final OrderRepository orderRepository;
     private final OrderCreationService orderCreationService;
 
     public OrderService(
             BookRepository bookRepository,
             IdempotencyKeyRepository idempotencyRepository,
+            InventoryMovementRepository inventoryMovementRepository,
             OrderRepository orderRepository,
             OrderCreationService orderCreationService) {
         this.bookRepository = bookRepository;
         this.idempotencyRepository = idempotencyRepository;
+        this.inventoryMovementRepository = inventoryMovementRepository;
         this.orderRepository = orderRepository;
         this.orderCreationService = orderCreationService;
     }
@@ -89,6 +93,8 @@ public class OrderService {
 
         order.transitionTo(OrderStatus.CANCELLED);
 
+        var restockMovements = new ArrayList<InventoryMovement>();
+
         for (OrderItem item : order.getItems()) {
             int updated = bookRepository.restoreStock(
                 item.getBook().getId(),
@@ -100,7 +106,16 @@ public class OrderService {
                     "Could not restore stock for book " + item.getBook().getId()
                 );
             }
+
+            restockMovements.add(new InventoryMovement(
+                item.getBook(),
+                order,
+                item.getQuantity(),
+                InventoryMovementType.ORDER_CANCELLATION_RESTOCK
+            ));
         }
+
+        inventoryMovementRepository.saveAllAndFlush(restockMovements);
 
         return toResponse(order);
     }

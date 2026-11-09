@@ -72,7 +72,38 @@ CREATE TABLE IF NOT EXISTS order_items (
     INDEX idx_order_items_book_id (book_id)
 );
 
--- 4. IDEMPOTENCY KEYS
+-- 4. INVENTORY MOVEMENT LEDGER
+CREATE TABLE IF NOT EXISTS inventory_movements (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    order_id VARCHAR(36) NOT NULL,
+    book_id BIGINT NOT NULL,
+    quantity_change INT NOT NULL,
+    movement_type VARCHAR(32) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_inventory_movements_order
+        FOREIGN KEY (order_id)
+        REFERENCES orders(id)
+        ON DELETE RESTRICT,
+
+    CONSTRAINT fk_inventory_movements_book
+        FOREIGN KEY (book_id)
+        REFERENCES books(id)
+        ON DELETE RESTRICT,
+
+    CONSTRAINT ck_inventory_movements_quantity_nonzero
+        CHECK (quantity_change <> 0),
+
+    CONSTRAINT ck_inventory_movements_type
+        CHECK (movement_type IN ('ORDER_DEDUCTION', 'ORDER_CANCELLATION_RESTOCK')),
+
+    CONSTRAINT uq_inventory_movement_order_book_type
+        UNIQUE (order_id, book_id, movement_type),
+
+    INDEX idx_inventory_movements_book_created (book_id, created_at)
+);
+
+-- 5. IDEMPOTENCY KEYS
 CREATE TABLE IF NOT EXISTS idempotency_keys (
     `key` VARCHAR(120) PRIMARY KEY,
     order_id VARCHAR(36) NOT NULL,

@@ -1,6 +1,9 @@
 package com.bookstore.books;
 
 import com.bookstore.orders.IdempotencyKeyRepository;
+import com.bookstore.orders.InventoryMovement;
+import com.bookstore.orders.InventoryMovementRepository;
+import com.bookstore.orders.InventoryMovementType;
 import com.bookstore.orders.OrderException;
 import com.bookstore.orders.OrderItemRepository;
 import com.bookstore.orders.OrderRepository;
@@ -14,10 +17,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -55,11 +60,15 @@ class OrderCreationTransactionTest {
     private IdempotencyKeyRepository idempotencyKeyRepository;
 
     @Autowired
+    private InventoryMovementRepository inventoryMovementRepository;
+
+    @Autowired
     private MockMvc mockMvc;
 
     @BeforeEach
     void clearDatabase() {
         idempotencyKeyRepository.deleteAll();
+        inventoryMovementRepository.deleteAll();
         orderItemRepository.deleteAll();
         orderRepository.deleteAll();
         bookRepository.deleteAll();
@@ -79,6 +88,14 @@ class OrderCreationTransactionTest {
         assertThat(orderRepository.count()).isEqualTo(1);
         assertThat(orderItemRepository.count()).isEqualTo(1);
         assertThat(idempotencyKeyRepository.count()).isEqualTo(1);
+        assertThat(movementsFor(response.order_id()))
+            .singleElement()
+            .satisfies(movement -> {
+                assertThat(movement.getQuantityChange()).isEqualTo(-2);
+                assertThat(movement.getMovementType())
+                    .isEqualTo(InventoryMovementType.ORDER_DEDUCTION);
+                assertThat(movement.getCreatedAt()).isNotNull();
+            });
     }
 
     @Test
@@ -128,6 +145,10 @@ class OrderCreationTransactionTest {
         assertThat(orderRepository.count()).isEqualTo(1);
         assertThat(orderItemRepository.count()).isEqualTo(1);
         assertThat(idempotencyKeyRepository.count()).isEqualTo(1);
+        assertThat(movementsFor(firstResponse.order_id()))
+            .singleElement()
+            .satisfies(movement ->
+                assertThat(movement.getQuantityChange()).isEqualTo(-2));
     }
 
     @Test
@@ -147,6 +168,16 @@ class OrderCreationTransactionTest {
         assertThat(stockOf(book)).isEqualTo(5);
         assertThat(orderRepository.count()).isEqualTo(1);
         assertThat(orderItemRepository.count()).isEqualTo(1);
+        assertThat(movementsFor(order.order_id())).hasSize(2);
+        assertThat(movementsFor(order.order_id()))
+            .extracting(movement -> movement.getMovementType())
+            .containsExactlyInAnyOrder(
+                InventoryMovementType.ORDER_DEDUCTION,
+                InventoryMovementType.ORDER_CANCELLATION_RESTOCK
+            );
+        assertThat(movementsFor(order.order_id()))
+            .extracting(movement -> movement.getQuantityChange())
+            .containsExactlyInAnyOrder(-2, 2);
 
         mockMvc.perform(post("/api/orders/{orderId}/cancel", order.order_id()))
             .andExpect(status().isConflict())
@@ -155,6 +186,7 @@ class OrderCreationTransactionTest {
         assertThat(stockOf(book)).isEqualTo(5);
         assertThat(orderRepository.count()).isEqualTo(1);
         assertThat(orderItemRepository.count()).isEqualTo(1);
+        assertThat(movementsFor(order.order_id())).hasSize(2);
     }
 
     @Test
@@ -200,9 +232,62 @@ class OrderCreationTransactionTest {
             assertThat(responseStatuses).containsExactlyInAnyOrder(200, 409);
             assertThat(stockOf(book)).isEqualTo(5);
             assertThat(orderRepository.count()).isEqualTo(1);
+            assertThat(movementsFor(order.order_id())).hasSize(2);
         } finally {
             executor.shutdownNow();
         }
+    }
+
+    @Test
+    void databaseRejectsDuplicateMovementForSameOrderBookAndType() {
+        Book book = saveBook("Unique ledger row", 5);
+        OrderResponse orderResponse = orderService.createOrder(
+            request(List.of(line(book, 2)), "success"),
+            "unique-ledger-checkout"
+        );
+        var order = orderRepository.findById(
+            Objects.requireNonNull(orderResponse.order_id())
+        ).orElseThrow();
+
+        assertThatThrownBy(() -> inventoryMovementRepository.saveAndFlush(
+            new InventoryMovement(
+                book,
+                order,
+                -2,
+                InventoryMovementType.ORDER_DEDUCTION
+            )
+        )).isInstanceOf(DataIntegrityViolationException.class);
+
+        assertThat(movementsFor(orderResponse.order_id())).hasSize(1);
+        assertThat(stockOf(book)).isEqualTo(3);
+    }
+
+    @Test
+    void duplicateRestockLedgerEntryRollsBackCancellationAndStockUpdate() {
+        Book book = saveBook("Atomic ledger rollback", 5);
+        OrderResponse orderResponse = orderService.createOrder(
+            request(List.of(line(book, 2)), "success"),
+            "atomic-ledger-checkout"
+        );
+        var order = orderRepository.findById(
+            Objects.requireNonNull(orderResponse.order_id())
+        ).orElseThrow();
+        inventoryMovementRepository.saveAndFlush(new InventoryMovement(
+            book,
+            order,
+            2,
+            InventoryMovementType.ORDER_CANCELLATION_RESTOCK
+        ));
+
+        assertThatThrownBy(() -> orderService.cancelOrder(orderResponse.order_id()))
+            .isInstanceOf(DataIntegrityViolationException.class);
+
+        assertThat(stockOf(book)).isEqualTo(3);
+        assertThat(orderRepository.findById(
+            Objects.requireNonNull(orderResponse.order_id())
+        ).orElseThrow()
+            .getStatus().name()).isEqualTo("CONFIRMED");
+        assertThat(movementsFor(orderResponse.order_id())).hasSize(2);
     }
 
     private Book saveBook(String title, int stock) {
@@ -216,15 +301,21 @@ class OrderCreationTransactionTest {
     }
 
     private int stockOf(Book book) {
-        return bookRepository.findById(book.getId())
+        Long bookId = Objects.requireNonNull(book.getId(), "Book id must not be null");
+        return bookRepository.findById(bookId)
             .orElseThrow()
             .getStock();
+    }
+
+    private List<InventoryMovement> movementsFor(String orderId) {
+        return inventoryMovementRepository.findByOrder_Id(orderId);
     }
 
     private void assertNoOrderRecords() {
         assertThat(orderRepository.count()).isZero();
         assertThat(orderItemRepository.count()).isZero();
         assertThat(idempotencyKeyRepository.count()).isZero();
+        assertThat(inventoryMovementRepository.count()).isZero();
     }
 
     private OrderLineRequest line(Book book, int quantity) {
