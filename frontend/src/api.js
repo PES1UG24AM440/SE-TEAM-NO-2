@@ -33,6 +33,9 @@ export const getBooks = ({ q = '', category = '' } = {}) => {
   return request(`/api/books${query ? `?${query}` : ''}`);
 };
 export const getBook = (id) => request(`/api/books/${encodeURIComponent(id)}`);
+export const getOrderQuote = (items) => request('/api/orders/quote', {
+  method: 'POST', body: JSON.stringify({ items }),
+});
 export const placeOrder = (order, idempotencyKey) => request('/api/orders', {
   method: 'POST', body: JSON.stringify(order), headers: { 'Idempotency-Key': idempotencyKey },
 });

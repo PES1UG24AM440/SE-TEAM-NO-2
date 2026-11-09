@@ -10,7 +10,6 @@ import com.bookstore.orders.dto.OrderResponse;
 
 import jakarta.persistence.EntityManager;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,27 +25,21 @@ public class OrderCreationService {
     private final IdempotencyKeyRepository idempotencyRepository;
     private final InventoryMovementRepository inventoryMovementRepository;
     private final EntityManager entityManager;
-
-    @Value("${bookstore.shipping:0}")
-    private BigDecimal shipping;
-
-    @Value("${bookstore.tax-rate:0}")
-    private BigDecimal taxRate;
-
-    @Value("${bookstore.discount:0}")
-    private BigDecimal configuredDiscount;
+    private final OrderTotalsCalculator totalsCalculator;
 
     public OrderCreationService(
             BookRepository bookRepository,
             OrderRepository orderRepository,
             IdempotencyKeyRepository idempotencyRepository,
             InventoryMovementRepository inventoryMovementRepository,
-            EntityManager entityManager) {
+            EntityManager entityManager,
+            OrderTotalsCalculator totalsCalculator) {
         this.bookRepository = bookRepository;
         this.orderRepository = orderRepository;
         this.idempotencyRepository = idempotencyRepository;
         this.inventoryMovementRepository = inventoryMovementRepository;
         this.entityManager = entityManager;
+        this.totalsCalculator = totalsCalculator;
     }
 
     private BigDecimal money(BigDecimal value) {
@@ -90,7 +83,7 @@ public class OrderCreationService {
             );
         }
 
-        subtotal = money(subtotal);
+        OrderTotalsCalculator.Totals totals = totalsCalculator.calculate(subtotal);
 
         if ("failure".equals(request.payment_scenario())) {
             throw new OrderException(
@@ -99,11 +92,6 @@ public class OrderCreationService {
                 "The payment simulator declined this payment. No order was confirmed."
             );
         }
-
-        BigDecimal tax = money(subtotal.multiply(taxRate));
-        BigDecimal gross = money(subtotal.add(shipping).add(tax));
-        BigDecimal discount = money(configuredDiscount.min(gross));
-        BigDecimal total = money(gross.subtract(discount));
 
         Order order = new Order();
         order.setId(UUID.randomUUID().toString());
@@ -122,11 +110,11 @@ public class OrderCreationService {
         order.setPostalCode(customer.postal_code().trim());
         order.setCountry(customer.country().trim());
 
-        order.setSubtotal(subtotal);
-        order.setShipping(money(shipping));
-        order.setTax(tax);
-        order.setDiscount(discount);
-        order.setTotal(total);
+        order.setSubtotal(totals.subtotal());
+        order.setShipping(totals.shipping());
+        order.setTax(totals.tax());
+        order.setDiscount(totals.discount());
+        order.setTotal(totals.total());
 
         for (OrderLineRequest line : request.items()) {
             Book book = books.get(line.book_id());

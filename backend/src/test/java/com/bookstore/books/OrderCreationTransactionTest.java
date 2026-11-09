@@ -19,6 +19,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.http.MediaType;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -96,6 +97,63 @@ class OrderCreationTransactionTest {
                     .isEqualTo(InventoryMovementType.ORDER_DEDUCTION);
                 assertThat(movement.getCreatedAt()).isNotNull();
             });
+    }
+
+    @Test
+    void quoteEndpointReturnsDatabasePricesAndServerCalculatedTotals() throws Exception {
+        Book book = saveBook("Quoted title", 4);
+        mockMvc.perform(post("/api/orders/quote")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"items":[{"book_id":%d,"quantity":2}]}
+                    """.formatted(book.getId())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items[0].title").value("Quoted title"))
+            .andExpect(jsonPath("$.items[0].author").value("Regression Test"))
+            .andExpect(jsonPath("$.items[0].unit_price").value(10.00))
+            .andExpect(jsonPath("$.items[0].line_total").value(20.00))
+            .andExpect(jsonPath("$.subtotal").value(20.00))
+            .andExpect(jsonPath("$.total").value(20.00));
+        assertThat(stockOf(book)).isEqualTo(4);
+        assertNoOrderRecords();
+    }
+
+    @Test
+    void quoteRejectsUnavailableQuantityAndEmptyItems() throws Exception {
+        Book book = saveBook("Limited title", 1);
+        mockMvc.perform(post("/api/orders/quote")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"items":[{"book_id":%d,"quantity":2}]}
+                    """.formatted(book.getId())))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.detail.code").value("insufficient_stock"));
+        mockMvc.perform(post("/api/orders/quote")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"items\":[]}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.detail.code").value("validation_error"));
+    }
+
+    @Test
+    void backendRejectsWhitespaceNameInvalidPhoneAndPostalCode() throws Exception {
+        Book book = saveBook("Validation title", 2);
+        String body = """
+            {"items":[{"book_id":%d,"quantity":1}],"customer":{
+              "name":"   ","email":"reader@example.com","phone":"-------",
+              "address_line":"1 Test Street","city":"London","state":"England",
+              "postal_code":"12!!!","country":"United Kingdom"},"payment_scenario":"success"}
+            """.formatted(book.getId());
+        mockMvc.perform(post("/api/orders")
+                .header("Idempotency-Key", "invalid-customer-details")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.detail.code").value("validation_error"))
+            .andExpect(jsonPath("$.detail.fields[*].field").value(org.hamcrest.Matchers.hasItems(
+                "customer.name", "customer.phone", "customer.postal_code")));
+        assertThat(stockOf(book)).isEqualTo(2);
+        assertNoOrderRecords();
     }
 
     @Test
