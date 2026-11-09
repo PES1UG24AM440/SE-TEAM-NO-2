@@ -1,9 +1,11 @@
 
 package com.bookstore.orders;
 
+import com.bookstore.books.BookRepository;
 import com.bookstore.orders.dto.CreateOrderRequest;
 import com.bookstore.orders.dto.OrderResponse;
 
+import java.util.ArrayList;
 import java.util.Objects;
 
 import org.springframework.dao.DataIntegrityViolationException;
@@ -13,13 +15,22 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class OrderService {
 
+    private final BookRepository bookRepository;
     private final IdempotencyKeyRepository idempotencyRepository;
+    private final InventoryMovementRepository inventoryMovementRepository;
+    private final OrderRepository orderRepository;
     private final OrderCreationService orderCreationService;
 
     public OrderService(
+            BookRepository bookRepository,
             IdempotencyKeyRepository idempotencyRepository,
+            InventoryMovementRepository inventoryMovementRepository,
+            OrderRepository orderRepository,
             OrderCreationService orderCreationService) {
+        this.bookRepository = bookRepository;
         this.idempotencyRepository = idempotencyRepository;
+        this.inventoryMovementRepository = inventoryMovementRepository;
+        this.orderRepository = orderRepository;
         this.orderCreationService = orderCreationService;
     }
 
@@ -71,9 +82,47 @@ public class OrderService {
         }
     }
 
+    @Transactional
+    public OrderResponse cancelOrder(String orderId) {
+        Order order = orderRepository.findByIdForUpdate(orderId)
+            .orElseThrow(() -> new OrderException(
+                404,
+                "order_not_found",
+                "Order " + orderId + " was not found."
+            ));
+
+        order.transitionTo(OrderStatus.CANCELLED);
+
+        var restockMovements = new ArrayList<InventoryMovement>();
+
+        for (OrderItem item : order.getItems()) {
+            int updated = bookRepository.restoreStock(
+                item.getBook().getId(),
+                item.getQuantity()
+            );
+
+            if (updated != 1) {
+                throw new IllegalStateException(
+                    "Could not restore stock for book " + item.getBook().getId()
+                );
+            }
+
+            restockMovements.add(new InventoryMovement(
+                item.getBook(),
+                order,
+                item.getQuantity(),
+                InventoryMovementType.ORDER_CANCELLATION_RESTOCK
+            ));
+        }
+
+        inventoryMovementRepository.saveAllAndFlush(restockMovements);
+
+        return toResponse(order);
+    }
+
     @Transactional(readOnly = true)
     public OrderResponse findExistingOrder(String key) {
-        return idempotencyRepository.findById(Objects.requireNonNull(key))
+        return idempotencyRepository.findByKey(Objects.requireNonNull(key))
             .map(idempotencyKey -> Objects.requireNonNull(idempotencyKey).getOrder())
             .map(this::toResponse)
             .orElse(null);
@@ -82,7 +131,7 @@ public class OrderService {
     private OrderResponse toResponse(Order order) {
         return new OrderResponse(
             order.getId(),
-            order.getStatus(),
+            order.getStatus().name(),
             order.getSubtotal(),
             order.getShipping(),
             order.getTax(),

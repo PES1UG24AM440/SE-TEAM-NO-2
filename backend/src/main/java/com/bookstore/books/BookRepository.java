@@ -35,4 +35,16 @@ int deductStock(
     @Param("bookId") Long bookId,
     @Param("quantity") int quantity
 );
+
+@Modifying
+@Transactional
+@Query("""
+    UPDATE Book b
+    SET b.stock = b.stock + :quantity
+    WHERE b.id = :bookId
+""")
+int restoreStock(
+    @Param("bookId") Long bookId,
+    @Param("quantity") int quantity
+);
 }

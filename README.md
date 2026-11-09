@@ -99,7 +99,7 @@ cd backend
 mvn test
 ```
 
-The Maven test lifecycle compiles the service and any available tests. No Java test sources currently exist, so the current test phase succeeds with zero tests discovered. The backend CI job runs this command with Temurin Java 25. Database-backed runtime use also requires a configured MySQL database; connection settings are read from `DB_URL` and `DB_USERNAME` and the schema must match the JPA entities.
+The Maven test lifecycle runs the order transaction regression suite against an isolated in-memory H2 database. The suite verifies successful stock deduction, payment-failure behavior, rollback when any line has insufficient stock, idempotent retries, cancellation stock restoration/retry behavior, and inventory-ledger uniqueness, including persisted order, item, key, and movement records. The backend CI job runs this command with Temurin Java 25. Database-backed runtime use still requires a configured MySQL database; connection settings are read from `DB_URL` and `DB_USERNAME` and the schema must match the JPA entities.
 
 ## Member 4 cart, checkout, and order API
 
@@ -152,6 +152,10 @@ Open `http://127.0.0.1:5173`. Vite proxies `/api` requests to the local API. Set
 ```
 
 The optional `Idempotency-Key` header makes a repeated checkout return the original order without decrementing stock twice. The response contains the server-generated `order_id`, `status`, `subtotal`, `shipping`, `tax`, `discount`, `total`, and authoritative line items. Client prices and totals are rejected. Errors use a JSON `detail` object with a stable `code` and message; validation errors also include field paths. Invalid input returns 400, unknown books 404, insufficient stock 409, and simulated declines 402.
+
+The Spring Boot API supports `CONFIRMED` and `CANCELLED` order statuses; the only allowed transition is `CONFIRMED` to `CANCELLED`. `POST /api/orders/{orderId}/cancel` cancels a confirmed order and restores its stock in the same transaction. A repeated cancellation is rejected with 409 and does not restore stock again; an unknown order returns 404.
+
+The Spring Boot backend records stock changes in `inventory_movements`. `quantity_change` is signed (negative for an order deduction, positive for a cancellation restock); each row includes the book, order, movement type, and creation timestamp. Stock updates and ledger rows commit or roll back together. The database enforces at most one movement per order, book, and movement type. Apply the `inventory_movements` table definition from `database/schema.sql` to an existing MySQL database before starting the updated backend.
 
 The payment simulator has deterministic `success` and `failure` scenarios and accepts no card fields. A failed simulation creates no confirmed order and leaves inventory unchanged. Shipping, tax, and discount are configurable with `BOOKSTORE_SHIPPING`, `BOOKSTORE_TAX_RATE`, and `BOOKSTORE_DISCOUNT`; all default to zero because the SRS leaves those rules for Product Owner confirmation.
 
