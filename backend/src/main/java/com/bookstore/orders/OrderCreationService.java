@@ -56,7 +56,8 @@ public class OrderCreationService {
     @Transactional
     public OrderResponse createOrder(
             CreateOrderRequest request,
-            String idempotencyKey) {
+            String idempotencyKey,
+            String ownerSessionId) {
 
         Set<Long> bookIds = new HashSet<>();
 
@@ -107,6 +108,7 @@ public class OrderCreationService {
 
         Order order = new Order();
         order.setId(UUID.randomUUID().toString());
+        order.setOwnerSessionId(ownerSessionId);
 
         CustomerDetailsRequest customer = request.customer();
 

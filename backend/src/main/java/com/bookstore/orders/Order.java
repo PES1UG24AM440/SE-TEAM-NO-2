@@ -23,6 +23,9 @@ public class Order {
     @Column(nullable = false, length = 254)
     private String email;
 
+    @Column(name = "owner_session_id", length = 128)
+    private String ownerSessionId;
+
     @Column(length = 30)
     private String phone;
 
@@ -65,6 +68,7 @@ public class Order {
     public OrderStatus getStatus() { return status; }
     public String getCustomerName() { return customerName; }
     public String getEmail() { return email; }
+    public String getOwnerSessionId() { return ownerSessionId; }
     public String getPhone() { return phone; }
     public String getAddressLine() { return addressLine; }
     public String getCity() { return city; }
@@ -81,6 +85,7 @@ public class Order {
     public void setId(String id) { this.id = id; }
     public void setCustomerName(String customerName) { this.customerName = customerName; }
     public void setEmail(String email) { this.email = email; }
+    public void setOwnerSessionId(String ownerSessionId) { this.ownerSessionId = ownerSessionId; }
     public void setPhone(String phone) { this.phone = phone; }
     public void setAddressLine(String addressLine) { this.addressLine = addressLine; }
     public void setCity(String city) { this.city = city; }
