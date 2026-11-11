@@ -18,6 +18,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
@@ -80,7 +81,8 @@ class OrderCreationTransactionTest {
 
         OrderResponse response = orderService.createOrder(
             request(List.of(line(book, 2)), "success"),
-            "successful-checkout"
+            "successful-checkout",
+            "test-session"
         );
 
         assertThat(response.status()).isEqualTo("CONFIRMED");
@@ -104,7 +106,8 @@ class OrderCreationTransactionTest {
 
         assertThatThrownBy(() -> orderService.createOrder(
             request(List.of(line(book, 2)), "failure"),
-            "failed-payment"
+            "failed-payment",
+            "test-session"
         ))
             .isInstanceOfSatisfying(OrderException.class, exception ->
                 assertThat(exception.getCode()).isEqualTo("payment_failed"));
@@ -120,7 +123,8 @@ class OrderCreationTransactionTest {
 
         assertThatThrownBy(() -> orderService.createOrder(
             request(List.of(line(firstBook, 2), line(secondBook, 2)), "success"),
-            "insufficient-stock"
+            "insufficient-stock",
+            "test-session"
         ))
             .isInstanceOfSatisfying(OrderException.class, exception ->
                 assertThat(exception.getCode()).isEqualTo("insufficient_stock"));
@@ -136,9 +140,9 @@ class OrderCreationTransactionTest {
         CreateOrderRequest checkout = request(List.of(line(book, 2)), "success");
 
         OrderResponse firstResponse =
-            orderService.createOrder(checkout, "same-checkout-key");
+            orderService.createOrder(checkout, "same-checkout-key", "test-session");
         OrderResponse retryResponse =
-            orderService.createOrder(checkout, "same-checkout-key");
+            orderService.createOrder(checkout, "same-checkout-key", "test-session");
 
         assertThat(retryResponse.order_id()).isEqualTo(firstResponse.order_id());
         assertThat(stockOf(book)).isEqualTo(3);
@@ -155,13 +159,16 @@ class OrderCreationTransactionTest {
     void cancellingConfirmedOrderRestoresStockOnceAndRejectsRepeatCancellation()
             throws Exception {
         Book book = saveBook("Cancellation", 5);
+        MockHttpSession session = new MockHttpSession();
         OrderResponse order = orderService.createOrder(
             request(List.of(line(book, 2)), "success"),
-            "cancel-checkout"
+            "cancel-checkout",
+            session.getId()
         );
         assertThat(stockOf(book)).isEqualTo(3);
 
-        mockMvc.perform(post("/api/orders/{orderId}/cancel", order.order_id()))
+        mockMvc.perform(post("/api/orders/{orderId}/cancel", order.order_id())
+                .session(session))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.status").value("CANCELLED"));
 
@@ -179,7 +186,8 @@ class OrderCreationTransactionTest {
             .extracting(movement -> movement.getQuantityChange())
             .containsExactlyInAnyOrder(-2, 2);
 
-        mockMvc.perform(post("/api/orders/{orderId}/cancel", order.order_id()))
+        mockMvc.perform(post("/api/orders/{orderId}/cancel", order.order_id())
+                .session(session))
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.detail.code").value("invalid_status_transition"));
 
@@ -202,9 +210,11 @@ class OrderCreationTransactionTest {
     @Test
     void concurrentCancellationRestoresStockOnlyOnce() throws Exception {
         Book book = saveBook("Concurrent cancellation", 5);
+        MockHttpSession session = new MockHttpSession();
         OrderResponse order = orderService.createOrder(
             request(List.of(line(book, 2)), "success"),
-            "concurrent-cancel-checkout"
+            "concurrent-cancel-checkout",
+            session.getId()
         );
         CountDownLatch start = new CountDownLatch(1);
         ExecutorService executor = Executors.newFixedThreadPool(2);
@@ -214,12 +224,14 @@ class OrderCreationTransactionTest {
                 start.await();
                 return mockMvc.perform(
                     post("/api/orders/{orderId}/cancel", order.order_id())
+                        .session(session)
                 ).andReturn();
             });
             var second = executor.submit(() -> {
                 start.await();
                 return mockMvc.perform(
                     post("/api/orders/{orderId}/cancel", order.order_id())
+                        .session(session)
                 ).andReturn();
             });
             start.countDown();
@@ -243,7 +255,8 @@ class OrderCreationTransactionTest {
         Book book = saveBook("Unique ledger row", 5);
         OrderResponse orderResponse = orderService.createOrder(
             request(List.of(line(book, 2)), "success"),
-            "unique-ledger-checkout"
+            "unique-ledger-checkout",
+            "test-session"
         );
         var order = orderRepository.findById(
             Objects.requireNonNull(orderResponse.order_id())
@@ -267,7 +280,8 @@ class OrderCreationTransactionTest {
         Book book = saveBook("Atomic ledger rollback", 5);
         OrderResponse orderResponse = orderService.createOrder(
             request(List.of(line(book, 2)), "success"),
-            "atomic-ledger-checkout"
+            "atomic-ledger-checkout",
+            "rollback-session"
         );
         var order = orderRepository.findById(
             Objects.requireNonNull(orderResponse.order_id())
@@ -279,7 +293,10 @@ class OrderCreationTransactionTest {
             InventoryMovementType.ORDER_CANCELLATION_RESTOCK
         ));
 
-        assertThatThrownBy(() -> orderService.cancelOrder(orderResponse.order_id()))
+        assertThatThrownBy(() -> orderService.cancelOrder(
+            orderResponse.order_id(),
+            "rollback-session"
+        ))
             .isInstanceOf(DataIntegrityViolationException.class);
 
         assertThat(stockOf(book)).isEqualTo(3);

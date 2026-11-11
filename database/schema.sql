@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS orders (
 
     customer_name VARCHAR(120) NOT NULL,
     email VARCHAR(254) NOT NULL,
+    owner_session_id VARCHAR(128) NULL,
     phone VARCHAR(30) NULL,
 
     address_line VARCHAR(200) NOT NULL,
@@ -41,7 +42,9 @@ CREATE TABLE IF NOT EXISTS orders (
     shipping DECIMAL(10,2) NOT NULL,
     tax DECIMAL(10,2) NOT NULL,
     discount DECIMAL(10,2) NOT NULL,
-    total DECIMAL(10,2) NOT NULL
+    total DECIMAL(10,2) NOT NULL,
+
+    INDEX idx_orders_owner_session_id (owner_session_id)
 );
 
 -- 3. ORDER ITEMS
