@@ -5,6 +5,38 @@ const currency = (value) => new Intl.NumberFormat('en-IN', { style: 'currency', 
 const emptyForm = { name: '', email: '', phone: '', address_line: '', city: '', state: '', postal_code: '', country: '' };
 const required = ['name', 'email', 'address_line', 'city', 'state', 'postal_code', 'country'];
 const labels = { name: 'Full name', email: 'Email', phone: 'Phone (optional)', address_line: 'Address', city: 'City', state: 'State / region', postal_code: 'Postal code', country: 'Country' };
+const wishlistStorageKey = 'fieldnotes-wishlist';
+const legacyWishlistStorageKey = 'fieldnotes-books-wishlist';
+function isBookRecord(book) {
+  return book && (typeof book.id === 'number' || typeof book.id === 'string')
+    && typeof book.title === 'string' && typeof book.author === 'string'
+    && Number.isFinite(book.price) && Number.isFinite(book.stock);
+}
+function loadWishlist() {
+  try {
+    const stored = window.localStorage.getItem(wishlistStorageKey) ?? window.localStorage.getItem(legacyWishlistStorageKey);
+    if (!stored) return [];
+    const books = JSON.parse(stored);
+    if (!Array.isArray(books)) throw new TypeError('Saved wishlist data must be an array.');
+    return [...new Map(books.filter(isBookRecord).map((book) => [String(book.id), book])).values()];
+  } catch (error) {
+    console.error('Unable to load the saved wishlist.', error);
+    return [];
+  }
+}
+function renderBookCover(book, variant = 0) {
+  return <div className={`cover cover-${variant % 4}`} role="img" aria-label={`Cover of ${book.title} by ${book.author}`}>
+    <span className="cover-lines">{book.title.split(' ').slice(0, 3).join('\n')}</span>
+    <span className="cover-author">{book.author}</span><span className="cover-orbit" aria-hidden="true" />
+  </div>;
+}
+function renderWishlistButton(book, saved, onToggle) {
+  return <button type="button" className={`wishlist-toggle${saved ? ' saved' : ''}`}
+    aria-label={`${saved ? 'Remove' : 'Add'} ${book.title} ${saved ? 'from' : 'to'} wishlist`}
+    aria-pressed={saved} onClick={() => onToggle(book)}>
+    <span aria-hidden="true">{saved ? '♥' : '♡'}</span>
+  </button>;
+}
 const orderIdsKey = 'fieldnotes-order-ids';
 const readOrderIds = () => {
   try { const saved = JSON.parse(localStorage.getItem(orderIdsKey) || '[]'); return Array.isArray(saved) ? saved.filter((id) => typeof id === 'string' && id) : []; }
@@ -31,7 +63,9 @@ export default function App() {
   const [category, setCategory] = useState('All');
   const [cart, setCart] = useState({});
   const [cartSubtotal, setCartSubtotal] = useState(0);
+  const [wishlist, setWishlist] = useState(loadWishlist);
   const [view, setView] = useState('shop');
+  const [selectedBook, setSelectedBook] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [errors, setErrors] = useState({});
   const [notice, setNotice] = useState('');
@@ -49,6 +83,10 @@ export default function App() {
   const remember = useCallback((list) => {
     setKnown((current) => ({ ...current, ...Object.fromEntries(list.map((book) => [book.id, book])) }));
     setCategories((current) => [...new Set([...current, ...list.map((book) => book.category).filter(Boolean)])].sort());
+    setWishlist((current) => current.map((savedBook) => {
+      const currentBook = list.find((book) => String(book.id) === String(savedBook.id));
+      return currentBook ? { ...savedBook, ...currentBook } : savedBook;
+    }));
   }, []);
 
   const applyCart = useCallback((response) => {
@@ -84,11 +122,29 @@ export default function App() {
     return () => { active = false; clearTimeout(timer); };
   }, [query, category, remember]);
 
+  useEffect(() => {
+    try { window.localStorage.setItem(wishlistStorageKey, JSON.stringify(wishlist)); }
+    catch (error) {
+      console.error('Unable to save the wishlist on this device.', error);
+      setNotice('Your wishlist could not be saved on this device.');
+    }
+  }, [wishlist]);
+
   // Cart lines are looked up in `known` so items stay in the bag when a search or category filter hides them from the shelf.
   const items = useMemo(() => Object.entries(cart).map(([id, quantity]) => ({
     book: known[id], quantity,
   })).filter(({ book }) => book), [known, cart]);
   const total = cartSubtotal;
+
+  function toggleWishlist(book) {
+    const saved = wishlist.some((savedBook) => String(savedBook.id) === String(book.id));
+    setWishlist((current) => saved
+      ? current.filter((savedBook) => String(savedBook.id) !== String(book.id))
+      : current.some((savedBook) => String(savedBook.id) === String(book.id)) ? current : [...current, book]);
+    setNotice(`${book.title} ${saved ? 'removed from' : 'added to'} your wishlist.`);
+  }
+
+  function showDetails(book) { setSelectedBook(book); setView('details'); }
 
   function add(book) {
     setNotice('');
@@ -180,7 +236,7 @@ export default function App() {
 
   return <div className="site-shell">
     <header className="topbar"><a className="brand" href="#shop" onClick={() => setView('shop')} aria-label="Fieldnotes Books home"><span className="brand-mark">F</span><span>fieldnotes<span className="brand-light">books</span></span></a>
-      <nav aria-label="Main navigation"><button className={view === 'shop' ? 'nav-link active' : 'nav-link'} onClick={() => setView('shop')}>Browse books</button><button className={view === 'orders' ? 'nav-link active' : 'nav-link'} onClick={() => setView('orders')}>Orders</button><button className="cart-link" onClick={() => setView('cart')} aria-label={`Shopping bag, ${items.reduce((n, item) => n + item.quantity, 0)} items`}><span>Bag</span><span className="cart-count">{items.reduce((n, item) => n + item.quantity, 0)}</span></button></nav>
+      <nav aria-label="Main navigation"><button className={view === 'shop' ? 'nav-link active' : 'nav-link'} onClick={() => setView('shop')}>Browse books</button><button className={view === 'wishlist' ? 'nav-link wishlist-nav active' : 'nav-link wishlist-nav'} onClick={() => setView('wishlist')} aria-label={`Wishlist, ${wishlist.length} saved ${wishlist.length === 1 ? 'book' : 'books'}`}><span>Wishlist</span><span className="cart-count">{wishlist.length}</span></button><button className={view === 'orders' ? 'nav-link active' : 'nav-link'} onClick={() => setView('orders')}>Orders</button><button className="cart-link" onClick={() => setView('cart')} aria-label={`Shopping bag, ${items.reduce((n, item) => n + item.quantity, 0)} items`}><span>Bag</span><span className="cart-count">{items.reduce((n, item) => n + item.quantity, 0)}</span></button></nav>
     </header>
     <main>
       <section className="hero"><p className="eyebrow">A good book finds its way</p><h1>Stories for the<br /><em>in-between moments.</em></h1><p className="hero-copy">A small, thoughtful shelf of books to keep you curious.</p><div className="hero-stamp" aria-hidden="true">READ<br />MORE</div></section>
@@ -189,7 +245,22 @@ export default function App() {
       {!loading && !cartLoading && view === 'shop' && <section className="catalog" aria-labelledby="catalog-title"><div className="section-heading"><div><p className="eyebrow">The collection</p><h2 id="catalog-title">Find your next favourite</h2></div><span className="book-count">{books.length} {books.length === 1 ? 'book' : 'books'} on the shelf</span></div>
         <div className="catalog-tools"><label className="search-box" htmlFor="book-search"><span className="visually-hidden">Search books</span><input id="book-search" type="search" placeholder="Search by title, author or topic" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
           <div className="category-filter" role="group" aria-label="Filter by category">{['All', ...categories].map((name) => <button key={name} className={name === category ? 'chip active' : 'chip'} aria-pressed={name === category} onClick={() => setCategory(name)}>{name}</button>)}</div></div>
-        {books.length === 0 ? <p className="empty-catalog">{query || category !== 'All' ? 'No books match your search. Try a different word or category.' : 'The catalogue is unavailable right now. Please refresh and try again.'}</p> : <div className="book-grid">{books.map((book, index) => <article className="book-card" key={book.id}><div className={`cover cover-${index % 4}`} aria-hidden="true"><span className="cover-lines">{book.title.split(' ').slice(0, 3).join('\n')}</span><span className="cover-author">{book.author}</span><span className="cover-orbit" /></div><div className="book-meta"><div>{book.category && <span className="category-tag">{book.category}</span>}<h3>{book.title}</h3><p>{book.author}</p>{book.description && <p className="book-description">{book.description}</p>}</div><span className="price">{currency(book.price)}</span></div><div className="book-actions"><span className={book.stock > 0 ? 'stock' : 'stock sold-out'}>{book.stock > 0 ? `${book.stock} in stock` : 'Out of stock'}</span><button className="add-button" onClick={() => add(book)} disabled={book.stock === 0}>Add to bag <span aria-hidden="true">+</span></button></div></article>)}</div>}
+        {books.length === 0 ? <p className="empty-catalog">{query || category !== 'All' ? 'No books match your search. Try a different word or category.' : 'The catalogue is unavailable right now. Please refresh and try again.'}</p> : <div className="book-grid">{books.map((book, index) => <article className="book-card" key={book.id}><div className={`cover cover-${index % 4}`} aria-hidden="true"><span className="cover-lines">{book.title.split(' ').slice(0, 3).join('\n')}</span><span className="cover-author">{book.author}</span><span className="cover-orbit" /></div><div className="book-meta"><div>{book.category && <span className="category-tag">{book.category}</span>}<h3><button className="book-title" onClick={() => showDetails(book)}>{book.title}</button></h3><p>{book.author}</p>{book.description && <p className="book-description">{book.description}</p>}</div><span className="price">{currency(book.price)}</span></div><div className="book-actions"><span className={book.stock > 0 ? 'stock' : 'stock sold-out'}>{book.stock > 0 ? `${book.stock} in stock` : 'Out of stock'}</span><div className="card-actions">{renderWishlistButton(book, wishlist.some((savedBook) => String(savedBook.id) === String(book.id)), toggleWishlist)}<button className="add-button" onClick={() => add(book)} disabled={book.stock === 0}>Add to bag <span aria-hidden="true">+</span></button></div></div></article>)}</div>}
+      </section>}
+      {!loading && view === 'wishlist' && <section className="wishlist-page" aria-labelledby="wishlist-title">
+        <div className="section-heading"><div><p className="eyebrow">Saved for later</p><h2 id="wishlist-title">{wishlist.length ? 'Your Wishlist' : 'Your Wishlist is Empty!'}</h2></div><span className="book-count">{wishlist.length} {wishlist.length === 1 ? 'book' : 'books'} saved</span></div>
+        {wishlist.length === 0 ? <div className="empty-state wishlist-empty"><span className="empty-icon" aria-hidden="true">♡</span><p>You haven't saved any books yet. Explore our collection and save your favourite books.</p><button className="primary-button" onClick={() => setView('shop')}>Explore Books</button></div>
+          : <div className="wishlist-list">{wishlist.map((book, index) => <article className="wishlist-row" key={book.id}>
+            {renderBookCover(book, index)}
+            <div className="wishlist-book-info">{book.category && <span className="category-tag">{book.category}</span>}<h3><button className="book-title" onClick={() => showDetails(book)}>{book.title}</button></h3><p>{book.author}</p><p className="price">{currency(book.price)}</p><span className={book.stock > 0 ? 'stock' : 'stock sold-out'}>{book.stock > 0 ? `${book.stock} in stock` : 'Out of stock'}</span></div>
+            <div className="wishlist-actions"><button className="primary-button" onClick={() => add(book)} disabled={book.stock === 0}>Add to Cart</button><button className="text-button" aria-label={`Remove ${book.title} from wishlist`} onClick={() => toggleWishlist(book)}>Remove</button></div>
+          </article>)}</div>}
+      </section>}
+      {!loading && view === 'details' && selectedBook && <section className="book-details" aria-labelledby="details-title">
+        <button className="back-link back-top" onClick={() => setView('shop')}>← Back to books</button>
+        <div className="details-content">{renderBookCover(selectedBook, selectedBook.id)}
+          <div className="details-info">{selectedBook.category && <span className="category-tag">{selectedBook.category}</span>}<p className="eyebrow">A book to keep</p><h2 id="details-title">{selectedBook.title}</h2><p className="details-author">by {selectedBook.author}</p>{selectedBook.description && <p className="details-description">{selectedBook.description}</p>}<strong className="details-price">{currency(selectedBook.price)}</strong><p className={selectedBook.stock > 0 ? 'stock' : 'stock sold-out'}>{selectedBook.stock > 0 ? `${selectedBook.stock} in stock` : 'Out of stock'}</p><div className="details-actions">{renderWishlistButton(selectedBook, wishlist.some((book) => String(book.id) === String(selectedBook.id)), toggleWishlist)}<button className="primary-button" onClick={() => add(selectedBook)} disabled={selectedBook.stock === 0}>Add to bag</button></div></div>
+        </div>
       </section>}
       {!loading && !cartLoading && view === 'cart' && <section className="checkout-layout"><div><p className="eyebrow">Your selection</p><h2>Your bag</h2>{items.length === 0 ? <div className="empty-state"><span className="empty-icon">✳</span><h3>Your bag is waiting for a story.</h3><p>Browse the shelf and add a book you love.</p><button className="primary-button" onClick={() => setView('shop')}>Continue shopping</button></div> : <><div className="cart-list">{items.map(({ book, quantity }) => <article className="cart-row" key={book.id}><div className={`mini-cover cover-${book.id % 4}`} aria-hidden="true">{book.title.slice(0, 1)}</div><div className="cart-description"><h3>{book.title}</h3><p>{book.author} · {currency(book.price)} each</p><button className="text-button" onClick={() => remove(book)}>Remove</button></div><div className="quantity" aria-label={`Quantity for ${book.title}`}><button aria-label={`Decrease ${book.title} quantity`} onClick={() => change(book, -1)}>−</button><output aria-label={`${book.title} quantity`}>{quantity}</output><button aria-label={`Increase ${book.title} quantity`} onClick={() => change(book, 1)} disabled={quantity >= book.stock}>+</button></div><strong className="line-total">{currency(book.price * quantity)}</strong></article>)}</div><button className="text-button" onClick={clearBag}>Clear bag</button></>}</div>
         {items.length > 0 && <aside className="summary-card"><p className="eyebrow">At a glance</p><h3>Order summary</h3>{items.map(({ book, quantity }) => <div className="summary-line" key={book.id}><span>{book.title} <small>× {quantity}</small></span><span>{currency(book.price * quantity)}</span></div>)}<div className="summary-total"><span>Estimated total</span><strong>{currency(total)}</strong></div><p className="summary-note">Final total is calculated by the bookstore at checkout.</p><button className="primary-button wide" onClick={startCheckout}>Continue to checkout <span aria-hidden="true">→</span></button><button className="back-link" onClick={() => setView('shop')}>← Continue shopping</button></aside>}</section>}

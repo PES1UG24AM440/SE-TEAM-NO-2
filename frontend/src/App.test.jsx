@@ -227,3 +227,97 @@ describe('bookstore cart and checkout', () => {
     expect(await screen.findByText(/No books match your search/)).toBeInTheDocument();
   });
 });
+
+describe('saved books and wishlist', () => {
+  it('saves a book from its card and updates the wishlist count immediately', async () => {
+    const user = userEvent.setup(); render(<App />);
+    await screen.findByRole('heading', { name: 'The Alchemist' });
+    await user.click(screen.getByRole('button', { name: 'Add The Alchemist to wishlist' }));
+    expect(screen.getByRole('button', { name: 'Remove The Alchemist from wishlist' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Wishlist, 1 saved book' })).toBeInTheDocument();
+  });
+
+  it('removes a saved book and updates the count', async () => {
+    const user = userEvent.setup(); render(<App />);
+    await screen.findByRole('heading', { name: 'The Alchemist' });
+    await user.click(screen.getByRole('button', { name: 'Add The Alchemist to wishlist' }));
+    await user.click(screen.getByRole('button', { name: 'Wishlist, 1 saved book' }));
+    await user.click(screen.getByRole('button', { name: 'Remove The Alchemist from wishlist' }));
+    expect(screen.getByRole('button', { name: 'Wishlist, 0 saved books' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Your Wishlist is Empty!' })).toBeInTheDocument();
+  });
+
+  it('deduplicates persisted books and persists wishlist changes across a remount', async () => {
+    window.localStorage.setItem('fieldnotes-wishlist', JSON.stringify([fixture[0], fixture[0]]));
+    const user = userEvent.setup();
+    const firstRender = render(<App />);
+    await screen.findByRole('heading', { name: 'The Alchemist' });
+    expect(screen.getByRole('button', { name: 'Wishlist, 1 saved book' })).toBeInTheDocument();
+    expect(JSON.parse(window.localStorage.getItem('fieldnotes-wishlist'))).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: 'Remove The Alchemist from wishlist' }));
+    await user.click(screen.getByRole('button', { name: 'Add The Alchemist to wishlist' }));
+    firstRender.unmount();
+    render(<App />);
+    await screen.findByRole('heading', { name: 'The Alchemist' });
+    expect(screen.getByRole('button', { name: 'Remove The Alchemist from wishlist' })).toHaveAttribute('aria-pressed', 'true');
+    await user.click(screen.getByRole('button', { name: 'Wishlist, 1 saved book' }));
+    expect(screen.getByRole('heading', { name: 'Your Wishlist' })).toBeInTheDocument();
+    expect(screen.getAllByText('Paulo Coelho').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('₹299.00')).toBeInTheDocument();
+    expect(screen.getByText('2 in stock')).toBeInTheDocument();
+  });
+
+  it('ignores malformed or incomplete saved data without breaking the catalogue', async () => {
+    const logError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    window.localStorage.setItem('fieldnotes-wishlist', JSON.stringify([null, { id: 2, title: 'Incomplete book' }]));
+    render(<App />);
+    await screen.findByRole('heading', { name: 'The Alchemist' });
+    expect(screen.getByRole('button', { name: 'Wishlist, 0 saved books' })).toBeInTheDocument();
+    expect(JSON.parse(window.localStorage.getItem('fieldnotes-wishlist'))).toEqual([]);
+    logError.mockRestore();
+  });
+
+  it('keeps wishlist status synchronized between book cards and the details view', async () => {
+    const user = userEvent.setup(); render(<App />);
+    await screen.findByRole('heading', { name: 'The Alchemist' });
+    await user.click(screen.getByRole('button', { name: 'Add The Alchemist to wishlist' }));
+    await user.click(screen.getByRole('button', { name: 'The Alchemist' }));
+    expect(screen.getByRole('button', { name: 'Remove The Alchemist from wishlist' })).toHaveAttribute('aria-pressed', 'true');
+    await user.click(screen.getByRole('button', { name: 'Wishlist, 1 saved book' }));
+    expect(screen.getByRole('heading', { name: 'The Alchemist' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Browse books' }));
+    expect(screen.getByRole('button', { name: 'Remove The Alchemist from wishlist' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('shows the empty message and Explore Books returns to the catalogue', async () => {
+    const user = userEvent.setup(); render(<App />);
+    await screen.findByRole('heading', { name: 'The Alchemist' });
+    await user.click(screen.getByRole('button', { name: 'Wishlist, 0 saved books' }));
+    expect(screen.getByText("You haven't saved any books yet. Explore our collection and save your favourite books.")).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Explore Books' }));
+    expect(screen.getByRole('heading', { name: 'Find your next favourite' })).toBeInTheDocument();
+  });
+
+  it('adds a saved book to the server-backed cart and updates the cart count', async () => {
+    const user = userEvent.setup(); render(<App />);
+    await screen.findByRole('heading', { name: 'The Alchemist' });
+    await user.click(screen.getByRole('button', { name: 'Add The Alchemist to wishlist' }));
+    await user.click(screen.getByRole('button', { name: 'Wishlist, 1 saved book' }));
+    await user.click(screen.getByRole('button', { name: 'Add to Cart' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('The Alchemist added to your cart.');
+    expect(await screen.findByRole('button', { name: 'Shopping bag, 1 items' })).toBeInTheDocument();
+    expect(updateCartItem).toHaveBeenCalledWith(1, 1);
+    await user.click(screen.getByRole('button', { name: 'Shopping bag, 1 items' }));
+    expect(screen.getByRole('heading', { name: 'Your bag' })).toBeInTheDocument();
+  });
+
+  it('disables adding a saved book that is out of stock', async () => {
+    getBooks.mockResolvedValue([{ ...fixture[0], stock: 0 }]);
+    const user = userEvent.setup(); render(<App />);
+    await screen.findByRole('heading', { name: 'The Alchemist' });
+    await user.click(screen.getByRole('button', { name: 'Add The Alchemist to wishlist' }));
+    await user.click(screen.getByRole('button', { name: 'Wishlist, 1 saved book' }));
+    expect(screen.getByRole('button', { name: 'Add to Cart' })).toBeDisabled();
+    expect(screen.getByText('Out of stock')).toBeInTheDocument();
+  });
+});
