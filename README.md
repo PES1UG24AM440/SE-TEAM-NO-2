@@ -112,6 +112,8 @@ The original Python CLI remains available. The Member 4 implementation adds a Re
 
 `GET /api/books` also accepts `q` (title, author or description) and `category`; `GET /api/books/{id}` returns one book. The Spring service requires an `Idempotency-Key` header on `POST /api/orders` (the React app sends one automatically). Books now include `category` and `description`.
 
+The cart is persisted by the Spring service using an anonymous browser cart ID stored in `localStorage`. `GET /api/cart/{cartId}` returns the current lines, item count, and authoritative server subtotal. `PUT /api/cart/{cartId}/items/{bookId}` accepts `{ "quantity": 2 }`, and `DELETE /api/cart/{cartId}/items/{bookId}` removes a line; `DELETE /api/cart/{cartId}/items` clears it after checkout. The API uses current book prices and stock from the catalogue, rejects quantities below one or above stock, and stores lines in the `cart_lines` table. Cart IDs are random UUIDs; account authentication is not implemented in this project.
+
 ### Start the Python reference API locally
 
 In one PowerShell window, from the repository root:
