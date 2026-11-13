@@ -6,6 +6,7 @@ async function request(path, options = {}) {
   try {
     const response = await fetch(`${base}${path}`, {
       ...options,
+      credentials: 'include',
       signal: controller.signal,
       headers: { 'Content-Type': 'application/json', ...options.headers },
     });
@@ -33,12 +34,15 @@ export const getBooks = ({ q = '', category = '' } = {}) => {
   return request(`/api/books${query ? `?${query}` : ''}`);
 };
 export const getBook = (id) => request(`/api/books/${encodeURIComponent(id)}`);
-export const getCart = (cartId) => request(`/api/cart/${encodeURIComponent(cartId)}`);
-export const updateCartItem = (cartId, bookId, quantity) => request(`/api/cart/${encodeURIComponent(cartId)}/items/${encodeURIComponent(bookId)}`, {
+export const getCart = () => request('/api/cart');
+export const updateCartItem = (bookId, quantity) => request(`/api/cart/items/${encodeURIComponent(bookId)}`, {
   method: 'PUT', body: JSON.stringify({ quantity }),
 });
-export const removeCartItem = (cartId, bookId) => request(`/api/cart/${encodeURIComponent(cartId)}/items/${encodeURIComponent(bookId)}`, { method: 'DELETE' });
-export const clearCart = (cartId) => request(`/api/cart/${encodeURIComponent(cartId)}/items`, { method: 'DELETE' });
+export const removeCartItem = (bookId) => request(`/api/cart/items/${encodeURIComponent(bookId)}`, {
+  method: 'DELETE',
+});
+export const clearCart = () => request('/api/cart', { method: 'DELETE' });
 export const placeOrder = (order, idempotencyKey) => request('/api/orders', {
   method: 'POST', body: JSON.stringify(order), headers: { 'Idempotency-Key': idempotencyKey },
 });
+export const getOrder = (id) => request(`/api/orders/${encodeURIComponent(id)}`);

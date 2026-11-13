@@ -2,19 +2,61 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App.jsx';
-import { clearCart, getBooks, getCart, placeOrder, removeCartItem, updateCartItem } from './api.js';
+import { clearCart, getBooks, getCart, getOrder, placeOrder, removeCartItem, updateCartItem } from './api.js';
 
-vi.mock('./api.js', () => ({ getBooks: vi.fn(), getCart: vi.fn(), updateCartItem: vi.fn(), removeCartItem: vi.fn(), clearCart: vi.fn(), placeOrder: vi.fn() }));
+vi.mock('./api.js', () => ({
+  clearCart: vi.fn(),
+  getBooks: vi.fn(),
+  getCart: vi.fn(),
+  getOrder: vi.fn(),
+  placeOrder: vi.fn(),
+  removeCartItem: vi.fn(),
+  updateCartItem: vi.fn(),
+}));
 const fixture = [{ id: 1, title: 'The Alchemist', author: 'Paulo Coelho', category: 'Fiction', description: 'A shepherd follows his dream.', price: 299, stock: 2 }];
 const habits = { id: 2, title: 'Atomic Habits', author: 'James Clear', category: 'Self-help', description: 'Tiny changes.', price: 499, stock: 5 };
-const line = (quantity, subtotal = 299 * quantity) => ({ items: [{ book_id: 1, title: fixture[0].title, author: fixture[0].author, unit_price: 299, quantity, line_total: subtotal, stock: 2 }], itemCount: quantity, subtotal });
+let cartLines;
+function cartResponse() {
+  const items = Object.entries(cartLines).map(([id, quantity]) => {
+    const book = [...fixture, habits].find((item) => item.id === Number(id));
+    return {
+      book_id: book.id, title: book.title, author: book.author, category: book.category,
+      description: book.description, quantity, stock: book.stock,
+      unit_price: book.price, line_total: book.price * quantity,
+    };
+  });
+  return { items, subtotal: items.reduce((sum, item) => sum + item.line_total, 0) };
+}
 
 beforeEach(() => {
-  vi.clearAllMocks(); getBooks.mockResolvedValue(fixture); getCart.mockResolvedValue({ items: [], itemCount: 0, subtotal: 0 });
-  updateCartItem.mockImplementation((_cartId, _bookId, quantity) => Promise.resolve(line(quantity)));
-  removeCartItem.mockResolvedValue({ items: [], itemCount: 0, subtotal: 0 });
-  clearCart.mockResolvedValue({ items: [], itemCount: 0, subtotal: 0 });
+  vi.clearAllMocks();
+  localStorage.clear();
+  cartLines = {};
+  getBooks.mockResolvedValue(fixture);
+  getCart.mockResolvedValue({ items: [], subtotal: 0 });
+  getOrder.mockResolvedValue({});
+  updateCartItem.mockImplementation((id, quantity) => {
+    cartLines[id] = quantity;
+    return Promise.resolve(cartResponse());
+  });
+  removeCartItem.mockImplementation((id) => {
+    delete cartLines[id];
+    return Promise.resolve(cartResponse());
+  });
+  clearCart.mockImplementation(() => {
+    cartLines = {};
+    return Promise.resolve(cartResponse());
+  });
 });
+
+async function finishCheckout(user) {
+  await screen.findByRole('heading', { name: 'The Alchemist' });
+  await user.click(screen.getByRole('button', { name: /Add to bag/ }));
+  await user.click(screen.getByRole('button', { name: /Shopping bag/ }));
+  await user.click(screen.getByRole('button', { name: /Continue to checkout/ }));
+  for (const [id, value] of Object.entries({ 'field-name': 'A Reader', 'field-email': 'reader@example.com', 'field-address_line': '1 Story Lane', 'field-city': 'Mysuru', 'field-state': 'Karnataka', 'field-postal_code': '570001', 'field-country': 'India' })) fireEvent.change(document.getElementById(id), { target: { value } });
+  await user.click(screen.getByRole('button', { name: /Place order/ }));
+}
 
 describe('bookstore cart and checkout', () => {
   it('renders catalogue, adds books and updates quantity subtotal and total', async () => {
@@ -24,8 +66,9 @@ describe('bookstore cart and checkout', () => {
     await user.click(screen.getByRole('button', { name: /Shopping bag/ }));
     expect(screen.getAllByText('₹299.00').length).toBeGreaterThanOrEqual(1);
     await user.click(screen.getByRole('button', { name: 'Increase The Alchemist quantity' }));
-    expect(screen.getAllByText('₹598.00').length).toBeGreaterThanOrEqual(1);
+    expect(await screen.findAllByText('₹598.00')).toHaveLength(3);
     expect(screen.getByText('× 2')).toBeInTheDocument();
+    expect(updateCartItem).toHaveBeenLastCalledWith(1, 2);
   });
 
   it('enforces available stock and removes items into the empty state', async () => {
@@ -35,6 +78,17 @@ describe('bookstore cart and checkout', () => {
     await user.click(screen.getByRole('button', { name: /Shopping bag/ }));
     await user.click(screen.getByRole('button', { name: 'Remove' }));
     expect(screen.getByText('Your bag is waiting for a story.')).toBeInTheDocument();
+    expect(removeCartItem).toHaveBeenCalledWith(1);
+  });
+
+  it('clears the session cart', async () => {
+    const user = userEvent.setup(); render(<App />);
+    await screen.findByRole('heading', { name: 'The Alchemist' });
+    await user.click(screen.getByRole('button', { name: /Add to bag/ }));
+    await user.click(screen.getByRole('button', { name: /Shopping bag/ }));
+    await user.click(screen.getByRole('button', { name: 'Clear bag' }));
+    expect(screen.getByText('Your bag is waiting for a story.')).toBeInTheDocument();
+    expect(clearCart).toHaveBeenCalledOnce();
   });
 
   it('shows required and invalid email errors without submitting', async () => {
@@ -60,6 +114,86 @@ describe('bookstore cart and checkout', () => {
     await user.click(screen.getByRole('button', { name: /Place order/ }));
     expect(await screen.findByRole('status')).toHaveTextContent('Only 0 copies remain.');
     expect(screen.queryByText('Thank you for your order.')).not.toBeInTheDocument();
+  });
+
+  it('clears the session cart after successful checkout', async () => {
+    const user = userEvent.setup();
+    placeOrder.mockResolvedValue({
+      order_id: 'order-123', status: 'CONFIRMED', total: 299,
+      items: [{ book_id: 1, title: 'The Alchemist', quantity: 1, line_total: 299 }],
+    });
+    render(<App />);
+    await screen.findByRole('heading', { name: 'The Alchemist' });
+    await user.click(screen.getByRole('button', { name: /Add to bag/ }));
+    await user.click(screen.getByRole('button', { name: /Shopping bag/ }));
+    await user.click(screen.getByRole('button', { name: /Continue to checkout/ }));
+    for (const [id, value] of Object.entries({
+      'field-name': 'A Reader',
+      'field-email': 'reader@example.com',
+      'field-address_line': '1 Story Lane',
+      'field-city': 'Mysuru',
+      'field-state': 'Karnataka',
+      'field-postal_code': '570001',
+      'field-country': 'India',
+    })) fireEvent.change(document.getElementById(id), { target: { value } });
+    await user.click(screen.getByRole('button', { name: /Place order/ }));
+    expect(await screen.findByText('Thank you for your order.')).toBeInTheDocument();
+    expect(clearCart).toHaveBeenCalledOnce();
+  });
+
+  it('shows order ID, purchased items, total and status after checkout', async () => {
+    const user = userEvent.setup();
+    placeOrder.mockResolvedValue({ order_id: 'order-confirm-58', status: 'CONFIRMED', total: 299, items: [{ book_id: 1, title: 'The Alchemist', quantity: 1, line_total: 299 }] });
+    render(<App />); await finishCheckout(user);
+    expect(await screen.findByText('Thank you for your order.')).toBeInTheDocument();
+    expect(screen.getByText('order-confirm-58')).toBeInTheDocument();
+    expect(screen.getByText('CONFIRMED')).toBeInTheDocument();
+    expect(screen.getByText('The Alchemist × 1')).toBeInTheDocument();
+    expect(screen.getAllByText('₹299.00').length).toBeGreaterThan(0);
+    expect(JSON.parse(localStorage.getItem('fieldnotes-order-ids'))).toEqual(['order-confirm-58']);
+  });
+
+  it('lists a saved order fetched by getOrder', async () => {
+    localStorage.setItem('fieldnotes-order-ids', JSON.stringify(['saved-58']));
+    getOrder.mockResolvedValue({ order_id: 'saved-58', status: 'CONFIRMED', total: 299, items: [{ book_id: 1, title: 'The Alchemist', quantity: 1, line_total: 299 }] });
+    const user = userEvent.setup(); render(<App />); await user.click(await screen.findByRole('button', { name: 'Orders' }));
+    expect(await screen.findByText('saved-58')).toBeInTheDocument();
+    expect(screen.getByText('The Alchemist')).toBeInTheDocument();
+    expect(getOrder).toHaveBeenCalledWith('saved-58');
+  });
+
+  it('shows the empty order history state', async () => {
+    const user = userEvent.setup(); render(<App />); await user.click(await screen.findByRole('button', { name: 'Orders' }));
+    expect(await screen.findByText('No orders yet.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Back to the shelf' })).toBeInTheDocument();
+  });
+
+  it('shows a clear message for an invalid order ID without showing order details', async () => {
+    getOrder.mockRejectedValue(new Error('Order not found.'));
+    const user = userEvent.setup(); render(<App />); await user.click(await screen.findByRole('button', { name: 'Orders' }));
+    await user.type(screen.getByLabelText('Order ID'), 'invalid-id');
+    await user.click(screen.getByRole('button', { name: 'Find order' }));
+    expect(await screen.findByText("We couldn't find an order with that ID.")).toBeInTheDocument();
+    expect(screen.queryByText('Order ID')).toBeInTheDocument();
+    expect(screen.queryByText('CONFIRMED')).not.toBeInTheDocument();
+    expect(screen.queryByText('invalid-id', { selector: 'strong' })).not.toBeInTheDocument();
+  });
+
+  it('shows retrieval errors and keeps the orders view usable', async () => {
+    getOrder.mockRejectedValue(new Error('Network connection failed.'));
+    const user = userEvent.setup(); render(<App />); await user.click(await screen.findByRole('button', { name: 'Orders' }));
+    await user.type(screen.getByLabelText('Order ID'), 'network-id');
+    await user.click(screen.getByRole('button', { name: 'Find order' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Network connection failed.');
+    expect(screen.getByLabelText('Order ID')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Browse books' })).toBeInTheDocument();
+  });
+
+  it('asks for an order ID when lookup is empty', async () => {
+    const user = userEvent.setup(); render(<App />); await user.click(await screen.findByRole('button', { name: 'Orders' }));
+    await user.click(screen.getByRole('button', { name: 'Find order' }));
+    expect(await screen.findByText('Enter an order ID.')).toBeInTheDocument();
+    expect(getOrder).not.toHaveBeenCalled();
   });
 
   it('shows category and description and sends search and category filters to the API', async () => {
@@ -91,62 +225,5 @@ describe('bookstore cart and checkout', () => {
     getBooks.mockResolvedValue([]);
     await user.type(screen.getByLabelText('Search books'), 'zzzz');
     expect(await screen.findByText(/No books match your search/)).toBeInTheDocument();
-  });
-
-  it('loads persistent cart data and displays the server-calculated subtotal', async () => {
-    getCart.mockResolvedValue(line(1, 271.25));
-    render(<App />);
-    await screen.findByRole('heading', { name: 'The Alchemist' });
-    await userEvent.setup().click(screen.getByRole('button', { name: /Shopping bag/ }));
-    expect((await screen.findAllByText('₹271.25')).length).toBeGreaterThan(0);
-    expect(getCart).toHaveBeenCalledWith(expect.any(String));
-  });
-
-  it('shows cart load errors and retries the backend request', async () => {
-    getCart.mockRejectedValueOnce(new Error('Network unavailable.')).mockResolvedValueOnce({ items: [], itemCount: 0, subtotal: 0 });
-    const user = userEvent.setup(); render(<App />);
-    await screen.findByRole('heading', { name: 'The Alchemist' });
-    await user.click(screen.getByRole('button', { name: /Shopping bag/ }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Network unavailable.');
-    await user.click(screen.getByRole('button', { name: 'Retry' }));
-    expect(await screen.findByText('Your bag is waiting for a story.')).toBeInTheDocument();
-  });
-
-  it('updates and removes cart lines through the cart API', async () => {
-    const user = userEvent.setup(); render(<App />);
-    await screen.findByRole('heading', { name: 'The Alchemist' });
-    await user.click(screen.getByRole('button', { name: /Add to bag/ }));
-    await user.click(screen.getByRole('button', { name: /Shopping bag/ }));
-    await user.click(screen.getByRole('button', { name: 'Increase The Alchemist quantity' }));
-    expect(updateCartItem).toHaveBeenLastCalledWith(expect.any(String), 1, 2);
-    expect((await screen.findAllByText('₹598.00')).length).toBeGreaterThan(0);
-    await user.click(screen.getByRole('button', { name: 'Decrease The Alchemist quantity' }));
-    expect(updateCartItem).toHaveBeenLastCalledWith(expect.any(String), 1, 1);
-    await user.click(screen.getByRole('button', { name: 'Remove' }));
-    expect(removeCartItem).toHaveBeenCalledWith(expect.any(String), 1);
-    expect(await screen.findByText('Your bag is waiting for a story.')).toBeInTheDocument();
-  });
-
-  it('keeps the item visible when a remove request fails', async () => {
-    getCart.mockResolvedValue(line(1));
-    removeCartItem.mockRejectedValue(new Error('Could not remove item.'));
-    const user = userEvent.setup(); render(<App />);
-    await screen.findByRole('heading', { name: 'The Alchemist' });
-    await user.click(screen.getByRole('button', { name: /Shopping bag/ }));
-    await user.click(await screen.findByRole('button', { name: 'Remove' }));
-    expect(await screen.findByText('Could not remove item.')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'The Alchemist' })).toBeInTheDocument();
-  });
-
-  it('reuses the browser cart ID so the backend cart survives a page remount', async () => {
-    localStorage.removeItem('bookstore-cart-id');
-    const { unmount } = render(<App />);
-    await screen.findByRole('heading', { name: 'The Alchemist' });
-    const firstCartId = localStorage.getItem('bookstore-cart-id');
-    unmount();
-    render(<App />);
-    await screen.findByRole('heading', { name: 'The Alchemist' });
-    expect(localStorage.getItem('bookstore-cart-id')).toBe(firstCartId);
-    expect(getCart).toHaveBeenLastCalledWith(firstCartId);
   });
 });

@@ -24,6 +24,7 @@ public class OrderCreationService {
     private final BookRepository bookRepository;
     private final OrderRepository orderRepository;
     private final IdempotencyKeyRepository idempotencyRepository;
+    private final InventoryMovementRepository inventoryMovementRepository;
     private final EntityManager entityManager;
 
     @Value("${bookstore.shipping:0}")
@@ -39,10 +40,12 @@ public class OrderCreationService {
             BookRepository bookRepository,
             OrderRepository orderRepository,
             IdempotencyKeyRepository idempotencyRepository,
+            InventoryMovementRepository inventoryMovementRepository,
             EntityManager entityManager) {
         this.bookRepository = bookRepository;
         this.orderRepository = orderRepository;
         this.idempotencyRepository = idempotencyRepository;
+        this.inventoryMovementRepository = inventoryMovementRepository;
         this.entityManager = entityManager;
     }
 
@@ -53,7 +56,8 @@ public class OrderCreationService {
     @Transactional
     public OrderResponse createOrder(
             CreateOrderRequest request,
-            String idempotencyKey) {
+            String idempotencyKey,
+            String ownerSessionId) {
 
         Set<Long> bookIds = new HashSet<>();
 
@@ -104,7 +108,7 @@ public class OrderCreationService {
 
         Order order = new Order();
         order.setId(UUID.randomUUID().toString());
-        order.setStatus("CONFIRMED");
+        order.setOwnerSessionId(ownerSessionId);
 
         CustomerDetailsRequest customer = request.customer();
 
@@ -168,6 +172,18 @@ public class OrderCreationService {
 
         orderRepository.saveAndFlush(order);
 
+        List<InventoryMovement> inventoryMovements = new ArrayList<>();
+        for (OrderItem item : order.getItems()) {
+            inventoryMovements.add(new InventoryMovement(
+                item.getBook(),
+                order,
+                -item.getQuantity(),
+                InventoryMovementType.ORDER_DEDUCTION
+            ));
+        }
+
+        inventoryMovementRepository.saveAllAndFlush(inventoryMovements);
+
         idempotencyRepository.saveAndFlush(
             new IdempotencyKey(idempotencyKey, order)
         );
@@ -189,7 +205,7 @@ public class OrderCreationService {
 
         return new OrderResponse(
             order.getId(),
-            order.getStatus(),
+            order.getStatus().name(),
             order.getSubtotal(),
             order.getShipping(),
             order.getTax(),
