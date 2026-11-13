@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS orders (
 
     customer_name VARCHAR(120) NOT NULL,
     email VARCHAR(254) NOT NULL,
+    owner_session_id VARCHAR(128) NULL,
     phone VARCHAR(30) NULL,
 
     address_line VARCHAR(200) NOT NULL,
@@ -41,7 +42,9 @@ CREATE TABLE IF NOT EXISTS orders (
     shipping DECIMAL(10,2) NOT NULL,
     tax DECIMAL(10,2) NOT NULL,
     discount DECIMAL(10,2) NOT NULL,
-    total DECIMAL(10,2) NOT NULL
+    total DECIMAL(10,2) NOT NULL,
+
+    INDEX idx_orders_owner_session_id (owner_session_id)
 );
 
 -- 3. ORDER ITEMS
@@ -72,7 +75,38 @@ CREATE TABLE IF NOT EXISTS order_items (
     INDEX idx_order_items_book_id (book_id)
 );
 
--- 4. IDEMPOTENCY KEYS
+-- 4. INVENTORY MOVEMENT LEDGER
+CREATE TABLE IF NOT EXISTS inventory_movements (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    order_id VARCHAR(36) NOT NULL,
+    book_id BIGINT NOT NULL,
+    quantity_change INT NOT NULL,
+    movement_type VARCHAR(32) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_inventory_movements_order
+        FOREIGN KEY (order_id)
+        REFERENCES orders(id)
+        ON DELETE RESTRICT,
+
+    CONSTRAINT fk_inventory_movements_book
+        FOREIGN KEY (book_id)
+        REFERENCES books(id)
+        ON DELETE RESTRICT,
+
+    CONSTRAINT ck_inventory_movements_quantity_nonzero
+        CHECK (quantity_change <> 0),
+
+    CONSTRAINT ck_inventory_movements_type
+        CHECK (movement_type IN ('ORDER_DEDUCTION', 'ORDER_CANCELLATION_RESTOCK')),
+
+    CONSTRAINT uq_inventory_movement_order_book_type
+        UNIQUE (order_id, book_id, movement_type),
+
+    INDEX idx_inventory_movements_book_created (book_id, created_at)
+);
+
+-- 5. IDEMPOTENCY KEYS
 CREATE TABLE IF NOT EXISTS idempotency_keys (
     `key` VARCHAR(120) PRIMARY KEY,
     order_id VARCHAR(36) NOT NULL,
@@ -83,7 +117,21 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
         ON DELETE RESTRICT
 );
 
--- 5. SEED BOOKS
+-- 5. PERSISTENT ANONYMOUS CART LINES
+CREATE TABLE IF NOT EXISTS cart_lines (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    cart_key VARCHAR(36) NOT NULL,
+    book_id BIGINT NOT NULL,
+    quantity INT NOT NULL,
+
+    CONSTRAINT fk_cart_lines_book
+        FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE,
+    CONSTRAINT ck_cart_lines_quantity_positive CHECK (quantity > 0),
+    UNIQUE KEY uq_cart_lines_cart_book (cart_key, book_id),
+    INDEX idx_cart_lines_cart_key (cart_key)
+);
+
+-- 6. SEED BOOKS
 INSERT INTO books (id, title, author, category, description, price, stock)
 VALUES
     (1, 'The Alchemist', 'Paulo Coelho', 'Fiction',
