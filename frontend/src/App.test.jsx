@@ -2,12 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App.jsx';
-import { clearCart, getBooks, getCart, placeOrder, removeCartItem, updateCartItem } from './api.js';
+import { clearCart, getBooks, getCart, getOrder, placeOrder, removeCartItem, updateCartItem } from './api.js';
 
 vi.mock('./api.js', () => ({
   clearCart: vi.fn(),
   getBooks: vi.fn(),
   getCart: vi.fn(),
+  getOrder: vi.fn(),
   placeOrder: vi.fn(),
   removeCartItem: vi.fn(),
   updateCartItem: vi.fn(),
@@ -29,9 +30,11 @@ function cartResponse() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
   cartLines = {};
   getBooks.mockResolvedValue(fixture);
   getCart.mockResolvedValue({ items: [], subtotal: 0 });
+  getOrder.mockResolvedValue({});
   updateCartItem.mockImplementation((id, quantity) => {
     cartLines[id] = quantity;
     return Promise.resolve(cartResponse());
@@ -45,6 +48,15 @@ beforeEach(() => {
     return Promise.resolve(cartResponse());
   });
 });
+
+async function finishCheckout(user) {
+  await screen.findByRole('heading', { name: 'The Alchemist' });
+  await user.click(screen.getByRole('button', { name: /Add to bag/ }));
+  await user.click(screen.getByRole('button', { name: /Shopping bag/ }));
+  await user.click(screen.getByRole('button', { name: /Continue to checkout/ }));
+  for (const [id, value] of Object.entries({ 'field-name': 'A Reader', 'field-email': 'reader@example.com', 'field-address_line': '1 Story Lane', 'field-city': 'Mysuru', 'field-state': 'Karnataka', 'field-postal_code': '570001', 'field-country': 'India' })) fireEvent.change(document.getElementById(id), { target: { value } });
+  await user.click(screen.getByRole('button', { name: /Place order/ }));
+}
 
 describe('bookstore cart and checkout', () => {
   it('renders catalogue, adds books and updates quantity subtotal and total', async () => {
@@ -127,6 +139,61 @@ describe('bookstore cart and checkout', () => {
     await user.click(screen.getByRole('button', { name: /Place order/ }));
     expect(await screen.findByText('Thank you for your order.')).toBeInTheDocument();
     expect(clearCart).toHaveBeenCalledOnce();
+  });
+
+  it('shows order ID, purchased items, total and status after checkout', async () => {
+    const user = userEvent.setup();
+    placeOrder.mockResolvedValue({ order_id: 'order-confirm-58', status: 'CONFIRMED', total: 299, items: [{ book_id: 1, title: 'The Alchemist', quantity: 1, line_total: 299 }] });
+    render(<App />); await finishCheckout(user);
+    expect(await screen.findByText('Thank you for your order.')).toBeInTheDocument();
+    expect(screen.getByText('order-confirm-58')).toBeInTheDocument();
+    expect(screen.getByText('CONFIRMED')).toBeInTheDocument();
+    expect(screen.getByText('The Alchemist × 1')).toBeInTheDocument();
+    expect(screen.getAllByText('₹299.00').length).toBeGreaterThan(0);
+    expect(JSON.parse(localStorage.getItem('fieldnotes-order-ids'))).toEqual(['order-confirm-58']);
+  });
+
+  it('lists a saved order fetched by getOrder', async () => {
+    localStorage.setItem('fieldnotes-order-ids', JSON.stringify(['saved-58']));
+    getOrder.mockResolvedValue({ order_id: 'saved-58', status: 'CONFIRMED', total: 299, items: [{ book_id: 1, title: 'The Alchemist', quantity: 1, line_total: 299 }] });
+    const user = userEvent.setup(); render(<App />); await user.click(await screen.findByRole('button', { name: 'Orders' }));
+    expect(await screen.findByText('saved-58')).toBeInTheDocument();
+    expect(screen.getByText('The Alchemist')).toBeInTheDocument();
+    expect(getOrder).toHaveBeenCalledWith('saved-58');
+  });
+
+  it('shows the empty order history state', async () => {
+    const user = userEvent.setup(); render(<App />); await user.click(await screen.findByRole('button', { name: 'Orders' }));
+    expect(await screen.findByText('No orders yet.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Back to the shelf' })).toBeInTheDocument();
+  });
+
+  it('shows a clear message for an invalid order ID without showing order details', async () => {
+    getOrder.mockRejectedValue(new Error('Order not found.'));
+    const user = userEvent.setup(); render(<App />); await user.click(await screen.findByRole('button', { name: 'Orders' }));
+    await user.type(screen.getByLabelText('Order ID'), 'invalid-id');
+    await user.click(screen.getByRole('button', { name: 'Find order' }));
+    expect(await screen.findByText("We couldn't find an order with that ID.")).toBeInTheDocument();
+    expect(screen.queryByText('Order ID')).toBeInTheDocument();
+    expect(screen.queryByText('CONFIRMED')).not.toBeInTheDocument();
+    expect(screen.queryByText('invalid-id', { selector: 'strong' })).not.toBeInTheDocument();
+  });
+
+  it('shows retrieval errors and keeps the orders view usable', async () => {
+    getOrder.mockRejectedValue(new Error('Network connection failed.'));
+    const user = userEvent.setup(); render(<App />); await user.click(await screen.findByRole('button', { name: 'Orders' }));
+    await user.type(screen.getByLabelText('Order ID'), 'network-id');
+    await user.click(screen.getByRole('button', { name: 'Find order' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Network connection failed.');
+    expect(screen.getByLabelText('Order ID')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Browse books' })).toBeInTheDocument();
+  });
+
+  it('asks for an order ID when lookup is empty', async () => {
+    const user = userEvent.setup(); render(<App />); await user.click(await screen.findByRole('button', { name: 'Orders' }));
+    await user.click(screen.getByRole('button', { name: 'Find order' }));
+    expect(await screen.findByText('Enter an order ID.')).toBeInTheDocument();
+    expect(getOrder).not.toHaveBeenCalled();
   });
 
   it('shows category and description and sends search and category filters to the API', async () => {
