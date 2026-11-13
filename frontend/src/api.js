@@ -45,3 +45,4 @@ export const clearCart = () => request('/api/cart', { method: 'DELETE' });
 export const placeOrder = (order, idempotencyKey) => request('/api/orders', {
   method: 'POST', body: JSON.stringify(order), headers: { 'Idempotency-Key': idempotencyKey },
 });
+export const getOrder = (id) => request(`/api/orders/${encodeURIComponent(id)}`);
