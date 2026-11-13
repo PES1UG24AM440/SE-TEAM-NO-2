@@ -174,7 +174,7 @@ describe('bookstore cart and checkout', () => {
     await user.type(screen.getByLabelText('Order ID'), 'invalid-id');
     await user.click(screen.getByRole('button', { name: 'Find order' }));
     expect(await screen.findByText("We couldn't find an order with that ID.")).toBeInTheDocument();
-    expect(screen.queryByText('Order ID')).toBeInTheDocument();
+    expect(screen.queryByText('Order ID')).not.toBeInTheDocument();
     expect(screen.queryByText('CONFIRMED')).not.toBeInTheDocument();
     expect(screen.queryByText('invalid-id', { selector: 'strong' })).not.toBeInTheDocument();
   });
