@@ -27,12 +27,27 @@ for (const sql of [schemaSql, additionalSql]) {
   }
 }
 
-// In-memory state
-let cart = {}; // bookId -> quantity
+// Session carts: sessionId -> { bookId: quantity }
+const sessionCarts = new Map();
+const defaultCart = {};
 const orders = new Map();
 const idempotencyMap = new Map();
 
-function getCartResponse() {
+function getSessionId(req) {
+  const cookieHeader = req.headers.cookie || '';
+  const match = cookieHeader.match(/SESSION=([a-zA-Z0-9-]+)/);
+  return match ? match[1] : null;
+}
+
+function getCartForRequest(sessionId) {
+  if (!sessionId) return defaultCart;
+  if (!sessionCarts.has(sessionId)) {
+    sessionCarts.set(sessionId, {});
+  }
+  return sessionCarts.get(sessionId);
+}
+
+function getCartResponse(cart) {
   const items = [];
   let subtotal = 0;
   for (const [idStr, quantity] of Object.entries(cart)) {
@@ -96,8 +111,15 @@ const server = http.createServer((req, res) => {
   const pathname = parsedUrl.pathname;
   const method = req.method.toUpperCase();
 
+  let sessionId = getSessionId(req);
+  if (!sessionId) {
+    sessionId = crypto.randomUUID();
+    res.setHeader('Set-Cookie', `SESSION=${sessionId}; Path=/; HttpOnly; SameSite=Lax`);
+  }
+
   // CORS headers
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Idempotency-Key');
   if (method === 'OPTIONS') {
@@ -113,6 +135,8 @@ const server = http.createServer((req, res) => {
     if (body) {
       try { jsonBody = JSON.parse(body); } catch (_) {}
     }
+
+    const currentCart = getCartForRequest(sessionId);
 
     const sendJson = (status, data) => {
       res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -146,7 +170,7 @@ const server = http.createServer((req, res) => {
 
     // 3. GET /api/cart
     if (method === 'GET' && pathname === '/api/cart') {
-      return sendJson(200, getCartResponse());
+      return sendJson(200, getCartResponse(currentCart));
     }
 
     // 4. PUT /api/cart/items/:bookId
@@ -159,24 +183,26 @@ const server = http.createServer((req, res) => {
       }
       const qty = jsonBody?.quantity ?? 1;
       if (qty <= 0) {
-        delete cart[bookId];
+        delete currentCart[bookId];
       } else {
-        cart[bookId] = qty;
+        currentCart[bookId] = qty;
       }
-      return sendJson(200, getCartResponse());
+      return sendJson(200, getCartResponse(currentCart));
     }
 
     // 5. DELETE /api/cart/items/:bookId
     if (method === 'DELETE' && cartItemMatch) {
       const bookId = Number(cartItemMatch[1]);
-      delete cart[bookId];
-      return sendJson(200, getCartResponse());
+      delete currentCart[bookId];
+      return sendJson(200, getCartResponse(currentCart));
     }
 
     // 6. DELETE /api/cart
     if (method === 'DELETE' && pathname === '/api/cart') {
-      cart = {};
-      return sendJson(200, getCartResponse());
+      for (const k of Object.keys(currentCart)) {
+        delete currentCart[k];
+      }
+      return sendJson(200, getCartResponse(currentCart));
     }
 
     // 7. POST /api/orders/quote
@@ -284,4 +310,3 @@ const HOST = '127.0.0.1';
 server.listen(PORT, HOST, () => {
   console.log(`Mock backend listening on http://${HOST}:${PORT}`);
 });
-
