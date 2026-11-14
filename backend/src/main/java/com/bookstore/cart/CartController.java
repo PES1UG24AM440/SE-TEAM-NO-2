@@ -5,7 +5,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import org.springframework.web.bind.annotation.*;
 
-@RestController
+@RestController("cartLineController")
 @RequestMapping("/api/cart/{cartId}")
 public class CartController {
     private final CartService cart;
