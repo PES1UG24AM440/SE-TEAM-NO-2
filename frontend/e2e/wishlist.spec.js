@@ -13,7 +13,7 @@ const books = [{
 test('wishlist saves across refresh and adds to cart independently', async ({ page }) => {
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
-  await page.route('**/api/books**', (route) => route.fulfill({ json: books }));
+  await page.route('**/api/books**', (route) => route.fulfill({ json: /\/api\/books\/\d+$/.test(new URL(route.request().url()).pathname) ? books[0] : books }));
   await page.goto('/');
 
   const wishlistButton = (saved) => page.getByRole('button', {
@@ -44,7 +44,7 @@ test('wishlist saves across refresh and adds to cart independently', async ({ pa
 });
 
 test('wishlist details button and empty state work', async ({ page }) => {
-  await page.route('**/api/books**', (route) => route.fulfill({ json: books }));
+  await page.route('**/api/books**', (route) => route.fulfill({ json: /\/api\/books\/\d+$/.test(new URL(route.request().url()).pathname) ? books[0] : books }));
   await page.goto('/');
   await page.getByRole('button', { name: 'Wishlist, 0 saved books' }).click();
   await expect(page.getByText(/haven't saved any books yet/i)).toBeVisible();
