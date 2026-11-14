@@ -2,10 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App.jsx';
-import { clearCart, getBooks, getCart, getOrder, placeOrder, removeCartItem, updateCartItem } from './api.js';
+import { clearCart, getBook, getBooks, getCart, getOrder, placeOrder, removeCartItem, updateCartItem } from './api.js';
 
 vi.mock('./api.js', () => ({
   clearCart: vi.fn(),
+  getBook: vi.fn(),
   getBooks: vi.fn(),
   getCart: vi.fn(),
   getOrder: vi.fn(),
@@ -31,10 +32,15 @@ function cartResponse() {
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
+  window.history.replaceState(null, '', '/');
   cartLines = {};
   getBooks.mockResolvedValue(fixture);
   getCart.mockResolvedValue({ items: [], subtotal: 0 });
   getOrder.mockResolvedValue({});
+  getBook.mockImplementation((id) => {
+    const book = [...fixture, habits].find((item) => item.id === Number(id));
+    return book ? Promise.resolve(book) : Promise.reject(new Error('Book not found'));
+  });
   updateCartItem.mockImplementation((id, quantity) => {
     cartLines[id] = quantity;
     return Promise.resolve(cartResponse());
@@ -319,5 +325,76 @@ describe('saved books and wishlist', () => {
     await user.click(screen.getByRole('button', { name: 'Wishlist, 1 saved book' }));
     expect(screen.getByRole('button', { name: 'Add to Cart' })).toBeDisabled();
     expect(screen.getByText('Out of stock')).toBeInTheDocument();
+  });
+});
+
+describe('catalogue details, sorting and filters', () => {
+  const shelf = [
+    { id: 1, title: 'The Alchemist', author: 'Paulo Coelho', category: 'Fiction', description: 'A shepherd follows his dream.', price: 299, stock: 2 },
+    { id: 2, title: 'Atomic Habits', author: 'James Clear', category: 'Self-help', description: 'Tiny changes.', price: 499, stock: 0 },
+    { id: 3, title: 'Clean Code', author: 'Robert C. Martin', category: 'Technology', description: 'Readable software.', price: 650, stock: 3 },
+  ];
+  const shownTitles = () => screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent);
+
+  beforeEach(() => { getBooks.mockResolvedValue(shelf); });
+
+  it('sorts the shelf by price and title', async () => {
+    const user = userEvent.setup(); render(<App />);
+    await screen.findByRole('heading', { name: 'Clean Code' });
+    await user.selectOptions(screen.getByLabelText('Sort by'), 'price-desc');
+    expect(shownTitles()).toEqual(['Clean Code', 'Atomic Habits', 'The Alchemist']);
+    await user.selectOptions(screen.getByLabelText('Sort by'), 'title-asc');
+    expect(shownTitles()).toEqual(['Atomic Habits', 'Clean Code', 'The Alchemist']);
+  });
+
+  it('filters by price range and stock, shows counts and resets', async () => {
+    const user = userEvent.setup(); render(<App />);
+    await screen.findByRole('heading', { name: 'Clean Code' });
+    await user.type(screen.getByLabelText('Minimum price'), '300');
+    expect(shownTitles()).toEqual(['Atomic Habits', 'Clean Code']);
+    expect(screen.getByText('Showing 2 of 3 books')).toBeInTheDocument();
+    await user.click(screen.getByLabelText('In stock only'));
+    expect(shownTitles()).toEqual(['Clean Code']);
+    await user.type(screen.getByLabelText('Maximum price'), '100');
+    expect(screen.getByRole('alert')).toHaveTextContent('Minimum price cannot be more than the maximum price.');
+    await user.click(screen.getByRole('button', { name: 'Reset sort & filters' }));
+    expect(shownTitles()).toHaveLength(3);
+    expect(screen.getByText('3 books on the shelf')).toBeInTheDocument();
+  });
+
+  it('explains when filters hide every book', async () => {
+    const user = userEvent.setup(); render(<App />);
+    await screen.findByRole('heading', { name: 'Clean Code' });
+    await user.type(screen.getByLabelText('Minimum price'), '5000');
+    expect(screen.getByText(/No books match these filters/)).toBeInTheDocument();
+  });
+
+  it('opens individual book details with fresh server data and a shareable link', async () => {
+    getBook.mockResolvedValueOnce({ ...shelf[2], stock: 1, price: 600 });
+    const user = userEvent.setup(); render(<App />);
+    await user.click(await screen.findByRole('button', { name: 'Clean Code' }));
+    expect(getBook).toHaveBeenCalledWith(3);
+    expect(window.location.hash).toBe('#book-3');
+    expect(screen.getByRole('heading', { level: 2, name: 'Clean Code' })).toBeInTheDocument();
+    expect(await screen.findByText('1 in stock')).toBeInTheDocument();
+    expect(screen.getByText('₹600.00')).toBeInTheDocument();
+    expect(screen.getByText('by Robert C. Martin')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '← Back to books' }));
+    expect(window.location.hash).toBe('#shop');
+    expect(screen.getByRole('heading', { name: 'Find your next favourite' })).toBeInTheDocument();
+  });
+
+  it('opens a book directly from a #book-<id> link', async () => {
+    window.history.replaceState(null, '', '#book-1');
+    render(<App />);
+    expect(await screen.findByRole('heading', { level: 2, name: 'The Alchemist' })).toBeInTheDocument();
+    expect(getBook).toHaveBeenCalledWith(1);
+  });
+
+  it('shows a friendly message for an unknown book link', async () => {
+    window.history.replaceState(null, '', '#book-999');
+    render(<App />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('We could not find that book.');
+    expect(screen.getByRole('heading', { name: 'Book unavailable' })).toBeInTheDocument();
   });
 });

@@ -13,8 +13,11 @@ async function request(path, options = {}) {
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
       const detail = body.detail;
-      const message = typeof detail === 'string' ? detail : detail?.message || 'The request could not be completed.';
-      throw new Error(message);
+      // OrderException responses carry { detail }, while Spring's default error body (e.g. a 404 from
+      // GET /api/books/{id}) only has { status, error, message }; keep the HTTP status for callers.
+      const fallback = response.status === 404 ? 'Not found.' : 'The request could not be completed.';
+      const message = typeof detail === 'string' ? detail : detail?.message || fallback;
+      throw Object.assign(new Error(message), { status: response.status });
     }
     return body;
   } catch (error) {
