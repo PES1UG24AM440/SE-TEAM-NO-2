@@ -6,14 +6,18 @@ async function request(path, options = {}) {
   try {
     const response = await fetch(`${base}${path}`, {
       ...options,
+      credentials: 'include',
       signal: controller.signal,
       headers: { 'Content-Type': 'application/json', ...options.headers },
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
       const detail = body.detail;
-      const message = typeof detail === 'string' ? detail : detail?.message || 'The request could not be completed.';
-      throw new Error(message);
+      // OrderException responses carry { detail }, while Spring's default error body (e.g. a 404 from
+      // GET /api/books/{id}) only has { status, error, message }; keep the HTTP status for callers.
+      const fallback = response.status === 404 ? 'Not found.' : 'The request could not be completed.';
+      const message = typeof detail === 'string' ? detail : detail?.message || fallback;
+      throw Object.assign(new Error(message), { status: response.status });
     }
     return body;
   } catch (error) {
@@ -33,9 +37,42 @@ export const getBooks = ({ q = '', category = '' } = {}) => {
   return request(`/api/books${query ? `?${query}` : ''}`);
 };
 export const getBook = (id) => request(`/api/books/${encodeURIComponent(id)}`);
-export const getOrderQuote = (items) => request('/api/orders/quote', {
-  method: 'POST', body: JSON.stringify({ items }),
-});
+export const getBook = (id) => request(`/api/books/${encodeURIComponent(id)}`);
+
+export const getOrderQuote = (items) =>
+  request('/api/orders/quote', {
+    method: 'POST',
+    body: JSON.stringify({ items }),
+  });
+
+export const getCart = () => request('/api/cart');
+
+export const updateCartItem = (bookId, quantity) =>
+  request(`/api/cart/items/${encodeURIComponent(bookId)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ quantity }),
+  });
+
+export const removeCartItem = (bookId) =>
+  request(`/api/cart/items/${encodeURIComponent(bookId)}`, {
+    method: 'DELETE',
+  });
+
+export const clearCart = () =>
+  request('/api/cart', {
+    method: 'DELETE',
+  });
+
+export const placeOrder = (order, idempotencyKey) =>
+  request('/api/orders', {
+    method: 'POST',
+    body: JSON.stringify(order),
+    headers: { 'Idempotency-Key': idempotencyKey },
+  });
+
+export const getOrder = (id) =>
+  request(`/api/orders/${encodeURIComponent(id)}`);
 export const placeOrder = (order, idempotencyKey) => request('/api/orders', {
   method: 'POST', body: JSON.stringify(order), headers: { 'Idempotency-Key': idempotencyKey },
 });
+export const getOrder = (id) => request(`/api/orders/${encodeURIComponent(id)}`);

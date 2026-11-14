@@ -15,4 +15,28 @@
 .category-tag{display:inline-block;margin-bottom:6px;font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--orange);font-weight:600}
 .book-description{margin:8px 0 0;font-size:.88rem;line-height:1.45;color:var(--muted);display:-webkit-box;-webkit-line-clamp:3;line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 
-.field input[aria-invalid='true']{border-color:#b84d3b;box-shadow:0 0 0 1px #b84d3b}.field-error{display:block;color:#a43e31;font-size:12px;margin-top:6px}.summary-count{font-size:12px;color:var(--muted);margin:-12px 0 10px}.summary-author{display:block;color:#69766b;margin:3px 0}.summary-line strong{font-size:12px;color:var(--green)}.quote-error{padding:12px;background:#fff0ec;color:#8c342b;font-size:12px}.quote-error p{margin:0 0 6px}
+.field input[aria-invalid='true']{border-color:#b84d3b;box-shadow:0 0 0 1px #b84d3b}
+.field-error{display:block;color:#a43e31;font-size:12px;margin-top:6px}
+.summary-count{font-size:12px;color:var(--muted);margin:-12px 0 10px}
+.summary-author{display:block;color:#69766b;margin:3px 0}
+.summary-line strong{font-size:12px;color:var(--green)}
+.quote-error{padding:12px;background:#fff0ec;color:#8c342b;font-size:12px}
+.quote-error p{margin:0 0 6px}
+
+.orders-view{padding:54px clamp(20px,8vw,116px) 90px;min-height:500px}
+.orders-view .section-heading{margin-bottom:24px}
+.orders-view h2{font:500 32px 'Playfair Display',serif;color:var(--green);margin:0}
+.order-lookup{max-width:620px;padding:20px 22px;margin-bottom:28px;background:#f0f1eb}
+.order-lookup label{display:block;margin-bottom:10px;color:var(--green);font-size:13px;font-weight:700}
+.order-lookup>div{display:flex;gap:10px}
+.order-lookup input{flex:1;min-width:0;padding:12px;border:1px solid var(--line);background:#fff;font:inherit}
+.order-lookup input:focus{outline:2px solid var(--green2);outline-offset:1px}
+.order-list{display:grid;gap:16px}
+.order-card{padding:22px 24px;background:#fff;border:1px solid var(--line)}
+.order-heading{display:grid;grid-template-columns:2fr 1fr 1fr;gap:14px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.order-heading div{display:grid;gap:5px}
+.order-heading span{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)}
+.order-heading strong{font-size:13px;color:var(--green);overflow-wrap:anywhere}
+.order-items{padding-top:6px}
+.order-error{color:#865440;font-size:13px}
+.order-lookup .order-error{margin:12px 0 0}
