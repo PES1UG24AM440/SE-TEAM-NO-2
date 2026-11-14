@@ -11,7 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-@Service
+@Service("cartLineService")
 public class CartService {
     private static final Pattern CART_KEY = Pattern.compile("[0-9a-fA-F-]{36}");
     private final CartLineRepository lines;

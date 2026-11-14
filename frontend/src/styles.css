@@ -78,3 +78,37 @@
   .wishlist-nav::before{content:'♡';font-size:20px;line-height:1}
   .wishlist-nav .cart-count,.cart-link .cart-count{width:20px;height:20px}
 }
+/* Sort & filter bar (issue: catalogue sorting and filters) */
+.refine-bar{display:flex;flex-wrap:wrap;align-items:flex-end;gap:14px 22px;margin:-10px 0 28px;padding:14px 18px;background:#f0f1eb;border:1px solid var(--line)}
+.refine-field,.price-range legend,.stock-toggle{color:var(--green);font-size:12px;font-weight:700;letter-spacing:.3px}
+.refine-field{display:grid;gap:6px}
+.refine-field select,.price-range input{padding:9px 12px;border:1px solid var(--line);background:#fff;font:inherit;font-size:14px;color:inherit;min-height:40px}
+.refine-field select:focus,.price-range input:focus,.stock-toggle input:focus-visible{outline:2px solid var(--green2);outline-offset:1px}
+.price-range{display:grid;grid-template-columns:96px auto 96px;align-items:center;gap:8px;border:0;margin:0;padding:0;min-width:0}
+.price-range legend{padding:0;margin-bottom:6px}
+.price-range input{width:100%;min-width:0}
+.price-range input[aria-invalid="true"]{border-color:#865440}
+.stock-toggle{display:flex;align-items:center;gap:8px;min-height:40px;cursor:pointer}
+.stock-toggle input{width:18px;height:18px;accent-color:var(--green)}
+.refine-bar .text-button{min-height:40px}
+.filter-error{display:block;margin:-18px 0 22px;color:#865440;font-size:13px}
+.details-refresh{color:var(--muted);font-size:12px;margin-top:14px}
+.details-missing{max-width:520px;margin:36px auto 0;text-align:center}
+@media(max-width:650px){
+  .catalog-tools{gap:12px}
+  .search-box{max-width:none;flex-basis:100%}
+  .category-filter{flex:1 1 100%;min-width:0;flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px;margin:0 -20px;padding-left:20px;padding-right:20px;scrollbar-width:thin}
+  .chip{white-space:nowrap;flex:0 0 auto}
+  .refine-bar{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px}
+  .refine-field,.price-range{grid-column:1/-1}
+  .refine-field select{width:100%}
+  .price-range{grid-template-columns:minmax(0,1fr) auto minmax(0,1fr)}
+  .price-range input{min-width:0}
+}
+/* Header: with Browse, Wishlist, Orders and Bag the nav no longer fits beside the brand on phones,
+   so it moves to its own full-width row instead of overflowing the page. */
+@media(max-width:650px){
+  .topbar{height:auto;min-height:65px;flex-wrap:wrap;row-gap:2px;padding:10px 20px}
+  .topbar nav{width:100%;justify-content:space-between;gap:8px}
+}
+@media(max-width:380px){.refine-bar{grid-template-columns:1fr}.topbar{padding:8px 12px}}
