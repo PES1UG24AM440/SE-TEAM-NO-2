@@ -110,6 +110,15 @@ The original Python CLI remains available. The Member 4 implementation adds a Re
 1. Start MySQL. For a fresh database, run `database/schema.sql` followed by `database/additional_books_seed.sql` to load the full catalogue. The additional seed updates book details without resetting stock for existing IDs. For an existing database, apply the required SQL migrations before starting the backend. Then in `backend/` set `DB_URL`, `DB_USERNAME` and `DB_PASSWORD` and run `mvn spring-boot:run` (serves `http://127.0.0.1:8080`).
 2. In `frontend/` run `npm install` and `npm run dev`, then open `http://127.0.0.1:5173`.
 
+Step-by-step commands, a MySQL health-check script and fixes for common connection errors are in [`docs/LOCAL_SETUP.md`](docs/LOCAL_SETUP.md). `database/create_app_user.sql` creates a dedicated `bookstore_app` MySQL account so the backend does not need `root`.
+
+### Catalogue browsing
+
+- **Book details:** select a title to open its page. Details are loaded from `GET /api/books/{id}`, so price and stock are current, and each book has a shareable link (`#book-<id>`) that works with the browser Back button. Unknown IDs show a "Book unavailable" message.
+- **Sorting:** featured (server order), title A–Z / Z–A, price low–high / high–low, author A–Z.
+- **Filters:** category chips and text search (server-side), plus a minimum/maximum price range and an "In stock only" toggle (client-side). An inverted price range is flagged and ignored, and "Reset sort & filters" restores the full shelf.
+- **Responsive layout:** the header, filter bar and details page adapt from 360 px phones to desktop without horizontal scrolling; on phones the category chips scroll sideways.
+
 `GET /api/books` also accepts `q` (title, author or description) and `category`; `GET /api/books/{id}` returns one book. The Spring service requires an `Idempotency-Key` header on `POST /api/orders` (the React app sends one automatically). Books now include `category` and `description`.
 
 The cart is persisted by the Spring service using an anonymous browser cart ID stored in `localStorage`. `GET /api/cart/{cartId}` returns the current lines, item count, and authoritative server subtotal. `PUT /api/cart/{cartId}/items/{bookId}` accepts `{ "quantity": 2 }`, and `DELETE /api/cart/{cartId}/items/{bookId}` removes a line; `DELETE /api/cart/{cartId}/items` clears it after checkout. The API uses current book prices and stock from the catalogue, rejects quantities below one or above stock, and stores lines in the `cart_lines` table. Cart IDs are random UUIDs; account authentication is not implemented in this project.
