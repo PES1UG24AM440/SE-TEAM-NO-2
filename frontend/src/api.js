@@ -37,14 +37,41 @@ export const getBooks = ({ q = '', category = '' } = {}) => {
   return request(`/api/books${query ? `?${query}` : ''}`);
 };
 export const getBook = (id) => request(`/api/books/${encodeURIComponent(id)}`);
+export const getBook = (id) => request(`/api/books/${encodeURIComponent(id)}`);
+
+export const getOrderQuote = (items) =>
+  request('/api/orders/quote', {
+    method: 'POST',
+    body: JSON.stringify({ items }),
+  });
+
 export const getCart = () => request('/api/cart');
-export const updateCartItem = (bookId, quantity) => request(`/api/cart/items/${encodeURIComponent(bookId)}`, {
-  method: 'PUT', body: JSON.stringify({ quantity }),
-});
-export const removeCartItem = (bookId) => request(`/api/cart/items/${encodeURIComponent(bookId)}`, {
-  method: 'DELETE',
-});
-export const clearCart = () => request('/api/cart', { method: 'DELETE' });
+
+export const updateCartItem = (bookId, quantity) =>
+  request(`/api/cart/items/${encodeURIComponent(bookId)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ quantity }),
+  });
+
+export const removeCartItem = (bookId) =>
+  request(`/api/cart/items/${encodeURIComponent(bookId)}`, {
+    method: 'DELETE',
+  });
+
+export const clearCart = () =>
+  request('/api/cart', {
+    method: 'DELETE',
+  });
+
+export const placeOrder = (order, idempotencyKey) =>
+  request('/api/orders', {
+    method: 'POST',
+    body: JSON.stringify(order),
+    headers: { 'Idempotency-Key': idempotencyKey },
+  });
+
+export const getOrder = (id) =>
+  request(`/api/orders/${encodeURIComponent(id)}`);
 export const placeOrder = (order, idempotencyKey) => request('/api/orders', {
   method: 'POST', body: JSON.stringify(order), headers: { 'Idempotency-Key': idempotencyKey },
 });

@@ -1,3 +1,5 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { getBooks, getOrderQuote, placeOrder } from './api.js';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { clearCart as clearCartRequest, getBook, getBooks, getCart, getOrder, placeOrder, removeCartItem, updateCartItem } from './api.js';
 import { bookHash, bookIdFromHash, emptyFilters, filterBooks, hasActiveFilters, priceFilterError, sortBooks, sortOptions } from './catalogue.js';
@@ -48,12 +50,28 @@ const saveOrderId = (id) => {
   catch { /* Order placement should still succeed if browser storage is unavailable. */ }
 };
 
+function validateField(key, rawValue) {
+  const value = rawValue.trim();
+  if (required.includes(key) && !value) return `${labels[key]} is required.`;
+  if (key === 'name' && value.length > 120) return 'Full name must be 120 characters or fewer.';
+  if (key === 'email' && value && (value.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value))) return 'Enter a valid email address.';
+  if (key === 'phone' && value) {
+    const digits = value.replace(/\D/g, '').length;
+    if (!/^\+?[0-9 ()-]+$/.test(value) || digits < 7 || digits > 15 || value.length > 25) return 'Enter a valid phone number.';
+  }
+  if (key === 'address_line' && value.length > 200) return 'Address must be 200 characters or fewer.';
+  if (['city', 'state'].includes(key) && value.length > 100) return `${labels[key]} must be 100 characters or fewer.`;
+  if (key === 'country' && value.length > 100) return 'Country must be 100 characters or fewer.';
+  if (key === 'postal_code' && (value.length > 20 || !/^[\p{L}\p{N}](?:[\p{L}\p{N} -]{0,18}[\p{L}\p{N}])?$/u.test(value))) return 'Enter a valid postal code.';
+  return '';
+}
+
 function validate(form) {
-  const errors = {};
-  required.forEach((key) => { if (!form[key].trim()) errors[key] = `${labels[key]} is required.`; });
-  if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) errors.email = 'Enter a valid email address.';
-  if (form.phone.trim() && !/^\+?[0-9 ()-]{7,20}$/.test(form.phone.trim())) errors.phone = 'Enter a valid phone number.';
-  return errors;
+  return Object.keys(form).reduce((errors, key) => {
+    const message = validateField(key, form[key]);
+    if (message) errors[key] = message;
+    return errors;
+  }, {});
 }
 
 export default function App() {
@@ -77,8 +95,14 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [cartLoading, setCartLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [quote, setQuote] = useState(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [quoteError, setQuoteError] = useState('');
+  const [quoteRefresh, setQuoteRefresh] = useState(0);
   const [paymentScenario, setPaymentScenario] = useState('success');
   const [confirmation, setConfirmation] = useState(null);
+  const submitLock = useRef(false);
+  const idempotencyAttempt = useRef(null);
   const [orders, setOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [lookupId, setLookupId] = useState('');
@@ -195,6 +219,25 @@ export default function App() {
     if (view !== 'details' && bookIdFromHash(window.location.hash) !== null) window.history.replaceState(null, '', '#shop');
   }, [view]);
 
+  const quoteItems = useMemo(() => items.map(({ book, quantity }) => ({ book_id: book.id, quantity })), [items]);
+  useEffect(() => {
+    if (view !== 'checkout' || quoteItems.length === 0) {
+      setQuote(null);
+      setQuoteError('');
+      setQuoteLoading(false);
+      return undefined;
+    }
+    let active = true;
+    setQuote(null);
+    setQuoteError('');
+    setQuoteLoading(true);
+    getOrderQuote(quoteItems)
+      .then((result) => { if (active) setQuote(result); })
+      .catch((error) => { if (active) setQuoteError(error.message); })
+      .finally(() => { if (active) setQuoteLoading(false); });
+    return () => { active = false; };
+  }, [view, quoteItems, quoteRefresh]);
+
   function add(book) {
     setNotice('');
     const quantity = cart[book.id] || 0;
@@ -226,17 +269,38 @@ export default function App() {
       .then(() => setNotice('Your bag has been cleared.'))
       .catch((error) => setNotice(error.message));
   }
+  function updateField(key, value) {
+    setForm((current) => ({ ...current, [key]: value }));
+    setErrors((current) => {
+      if (!current[key]) return current;
+      const message = validateField(key, value);
+      if (message) return { ...current, [key]: message };
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  }
   function startCheckout() { setErrors({}); setNotice(''); setView('checkout'); }
   function submit(event) {
     event.preventDefault();
+    if (submitLock.current || submitting) return;
     if (!items.length) { setNotice('Your cart is empty. Add a book before checking out.'); setView('shop'); return; }
     const nextErrors = validate(form);
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length) { setNotice('Please correct the highlighted fields.'); return; }
+    if (!quote || quoteLoading || quoteError) { setNotice('Please wait for the server to calculate your order total.'); return; }
+    const customer = Object.fromEntries(Object.entries(form).map(([key, value]) => [key, value.trim()]));
+    setForm(customer);
+    const order = { items: quoteItems, customer, payment_scenario: paymentScenario };
+    const signature = JSON.stringify(order);
+    if (idempotencyAttempt.current?.signature !== signature) {
+      idempotencyAttempt.current = { signature, key: crypto.randomUUID() };
+    }
+    submitLock.current = true;
     setSubmitting(true); setNotice('');
-    const key = crypto.randomUUID();
-    placeOrder({ items: items.map(({ book, quantity }) => ({ book_id: book.id, quantity })), customer: form, payment_scenario: paymentScenario }, key)
+    placeOrder(order, idempotencyAttempt.current.key)
       .then((order) => {
+        idempotencyAttempt.current = null;
         if (order.order_id) saveOrderId(order.order_id);
         setConfirmation(order); setCart({}); setView('confirmation'); setForm(emptyForm);
         setCartSubtotal(0);
@@ -248,7 +312,7 @@ export default function App() {
         return getBooks({ q: query, category }).then((list) => { setBooks(list); remember(list); }).catch(() => {});
       })
       .catch((error) => setNotice(error.message))
-      .finally(() => setSubmitting(false));
+      .finally(() => { submitLock.current = false; setSubmitting(false); });
   }
 
   useEffect(() => {
@@ -326,6 +390,9 @@ export default function App() {
       </section>}
       {!loading && !cartLoading && view === 'cart' && <section className="checkout-layout"><div><p className="eyebrow">Your selection</p><h2>Your bag</h2>{items.length === 0 ? <div className="empty-state"><span className="empty-icon">✳</span><h3>Your bag is waiting for a story.</h3><p>Browse the shelf and add a book you love.</p><button className="primary-button" onClick={() => setView('shop')}>Continue shopping</button></div> : <><div className="cart-list">{items.map(({ book, quantity }) => <article className="cart-row" key={book.id}><div className={`mini-cover cover-${book.id % 4}`} aria-hidden="true">{book.title.slice(0, 1)}</div><div className="cart-description"><h3>{book.title}</h3><p>{book.author} · {currency(book.price)} each</p><button className="text-button" onClick={() => remove(book)}>Remove</button></div><div className="quantity" aria-label={`Quantity for ${book.title}`}><button aria-label={`Decrease ${book.title} quantity`} onClick={() => change(book, -1)}>−</button><output aria-label={`${book.title} quantity`}>{quantity}</output><button aria-label={`Increase ${book.title} quantity`} onClick={() => change(book, 1)} disabled={quantity >= book.stock}>+</button></div><strong className="line-total">{currency(book.price * quantity)}</strong></article>)}</div><button className="text-button" onClick={clearBag}>Clear bag</button></>}</div>
         {items.length > 0 && <aside className="summary-card"><p className="eyebrow">At a glance</p><h3>Order summary</h3>{items.map(({ book, quantity }) => <div className="summary-line" key={book.id}><span>{book.title} <small>× {quantity}</small></span><span>{currency(book.price * quantity)}</span></div>)}<div className="summary-total"><span>Estimated total</span><strong>{currency(total)}</strong></div><p className="summary-note">Final total is calculated by the bookstore at checkout.</p><button className="primary-button wide" onClick={startCheckout}>Continue to checkout <span aria-hidden="true">→</span></button><button className="back-link" onClick={() => setView('shop')}>← Continue shopping</button></aside>}</section>}
+      {!loading && view === 'checkout' && <section className="checkout-layout"><div><button className="back-link back-top" onClick={() => setView('cart')}>← Back to your bag</button><p className="eyebrow">Almost yours</p><h2>Delivery details</h2>{items.length === 0 ? <div className="empty-state"><h3>Your bag is empty.</h3><button className="primary-button" onClick={() => setView('shop')}>Browse books</button></div> : <form className="checkout-form" onSubmit={submit} noValidate><div className="form-grid">{Object.keys(emptyForm).map((key) => <label className={`field ${key === 'address_line' ? 'full-field' : ''}`} key={key} htmlFor={`field-${key}`}>{labels[key]}{key !== 'phone' && <span className="required-mark" aria-hidden="true"> *</span>}<input id={`field-${key}`} type={key === 'email' ? 'email' : 'text'} autoComplete={key === 'name' ? 'name' : key === 'email' ? 'email' : key === 'phone' ? 'tel' : key === 'address_line' ? 'street-address' : 'address-level2'} value={form[key]} aria-invalid={Boolean(errors[key])} aria-describedby={errors[key] ? `error-${key}` : undefined} onChange={(event) => updateField(key, event.target.value)} onBlur={() => { const message = validateField(key, form[key]); setErrors((current) => { const next = { ...current }; if (message) next[key] = message; else delete next[key]; return next; }); }} />{errors[key] && <span className="field-error" id={`error-${key}`} role="alert">{errors[key]}</span>}</label>)}</div><fieldset className="payment-choice"><legend>Payment simulator</legend><p>This demo uses a simulator. No card details are requested or stored.</p><label><input type="radio" name="payment" value="success" checked={paymentScenario === 'success'} onChange={() => setPaymentScenario('success')} /> Simulate successful payment</label><label><input type="radio" name="payment" value="failure" checked={paymentScenario === 'failure'} onChange={() => setPaymentScenario('failure')} /> Simulate declined payment</label></fieldset><button className="primary-button submit-button" disabled={submitting || quoteLoading || Boolean(quoteError) || !quote}>{submitting ? 'Placing your order…' : quoteLoading ? 'Calculating order total…' : quoteError ? 'Order total unavailable' : `Place order · ${currency(quote?.total ?? total)}`}</button></form>}</div>
+        {items.length > 0 && <aside className="summary-card" aria-label="Order summary"><p className="eyebrow">Your books</p><h3>Order summary</h3>{quoteLoading && <p role="status">Calculating your order total…</p>}{quoteError && <div className="quote-error" role="alert"><p>{quoteError}</p><button type="button" className="back-link" onClick={() => setQuoteRefresh((current) => current + 1)}>Retry total calculation</button></div>}{quote && <><p className="summary-count">{quote.item_count} {quote.item_count === 1 ? 'item' : 'items'}</p>{quote.items.map((item) => <div className="summary-line" key={item.book_id}><span>{item.title}<small className="summary-author">{item.author}</small><small>× {item.quantity} · {currency(item.unit_price)} each</small></span><strong>{currency(item.line_total)}</strong></div>)}<div className="summary-line"><span>Subtotal</span><strong>{currency(quote.subtotal)}</strong></div>{quote.shipping > 0 && <div className="summary-line"><span>Shipping</span><strong>{currency(quote.shipping)}</strong></div>}{quote.tax > 0 && <div className="summary-line"><span>Tax</span><strong>{currency(quote.tax)}</strong></div>}{quote.discount > 0 && <div className="summary-line"><span>Discount</span><strong>−{currency(quote.discount)}</strong></div>}<div className="summary-total"><span>Final payable amount</span><strong>{currency(quote.total)}</strong></div><p className="summary-note">Prices and totals calculated by the bookstore server.</p></>}</aside>}</section>}
+      {view === 'confirmation' && confirmation && <section className="confirmation"><div className="success-mark" aria-hidden="true">✓</div><p className="eyebrow">All set</p><h2>Thank you for your order.</h2><p>Your payment was approved by the simulator. Your books are on their way to the address you provided.</p><div className="confirmation-card"><div><span>Order ID</span><strong>{confirmation.order_id}</strong></div><div><span>Status</span><strong>{confirmation.status}</strong></div><div><span>Confirmed total</span><strong>{currency(confirmation.total)}</strong></div>{confirmation.items.map((item) => <div key={item.book_id}><span>{item.title} × {item.quantity}</span><strong>{currency(item.line_total)}</strong></div>)}</div><button className="primary-button" onClick={() => setView('shop')}>Back to the bookshelf</button></section>}
       {!loading && !cartLoading && view === 'checkout' && <section className="checkout-layout"><div><button className="back-link back-top" onClick={() => setView('cart')}>← Back to your bag</button><p className="eyebrow">Almost yours</p><h2>Delivery details</h2>{items.length === 0 ? <div className="empty-state"><h3>Your bag is empty.</h3><button className="primary-button" onClick={() => setView('shop')}>Browse books</button></div> : <form className="checkout-form" onSubmit={submit} noValidate><div className="form-grid">{Object.keys(emptyForm).map((key) => <label className={`field ${key === 'address_line' ? 'full-field' : ''}`} key={key} htmlFor={`field-${key}`}>{labels[key]}{key !== 'phone' && <span className="required-mark" aria-hidden="true"> *</span>}<input id={`field-${key}`} type={key === 'email' ? 'email' : 'text'} autoComplete={key === 'name' ? 'name' : key === 'email' ? 'email' : key === 'phone' ? 'tel' : key === 'address_line' ? 'street-address' : 'address-level2'} value={form[key]} aria-invalid={Boolean(errors[key])} aria-describedby={errors[key] ? `error-${key}` : undefined} onChange={(event) => setForm((value) => ({ ...value, [key]: event.target.value }))} />{errors[key] && <span className="field-error" id={`error-${key}`}>{errors[key]}</span>}</label>)}</div><fieldset className="payment-choice"><legend>Payment simulator</legend><p>This demo uses a simulator. No card details are requested or stored.</p><label><input type="radio" name="payment" value="success" checked={paymentScenario === 'success'} onChange={() => setPaymentScenario('success')} /> Simulate successful payment</label><label><input type="radio" name="payment" value="failure" checked={paymentScenario === 'failure'} onChange={() => setPaymentScenario('failure')} /> Simulate declined payment</label></fieldset><button className="primary-button submit-button" disabled={submitting}>{submitting ? 'Placing your order…' : `Place order · ${currency(total)}`}</button></form>}</div>
         {items.length > 0 && <aside className="summary-card"><p className="eyebrow">Your books</p><h3>Order summary</h3>{items.map(({ book, quantity }) => <div className="summary-line" key={book.id}><span>{book.title} <small>× {quantity}</small></span><span>{currency(book.price * quantity)}</span></div>)}<div className="summary-total"><span>Estimated total</span><strong>{currency(total)}</strong></div><p className="summary-note">The server confirms the final amount and stock.</p></aside>}</section>}
       {!loading && !cartLoading && view === 'confirmation' && confirmation && <section className="confirmation"><div className="success-mark" aria-hidden="true">✓</div><p className="eyebrow">All set</p><h2>Thank you for your order.</h2><p>Your payment was approved by the simulator. Your books are on their way to the address you provided.</p><div className="confirmation-card"><div><span>Order ID</span><strong>{confirmation.order_id}</strong></div><div><span>Status</span><strong>{confirmation.status}</strong></div><div><span>Confirmed total</span><strong>{currency(confirmation.total)}</strong></div>{confirmation.items.map((item) => <div key={item.book_id}><span>{item.title} × {item.quantity}</span><strong>{currency(item.line_total)}</strong></div>)}</div><button className="primary-button" onClick={() => setView('shop')}>Back to the bookshelf</button></section>}

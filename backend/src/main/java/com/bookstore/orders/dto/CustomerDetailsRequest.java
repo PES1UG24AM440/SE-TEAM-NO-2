@@ -17,7 +17,7 @@ public record CustomerDetailsRequest(
 
     @Size(max = 30)
     @Pattern(
-        regexp = "^\\s*$|^\\+?[0-9 ()-]{7,20}$",
+        regexp = "^\\s*$|^(?=(?:\\D*\\d){7,15}\\D*$)\\+?[0-9 ()-]{7,25}$",
         message = "Enter a valid phone number."
     )
     String phone,
@@ -36,6 +36,10 @@ public record CustomerDetailsRequest(
 
     @NotBlank
     @Size(max = 20)
+    @Pattern(
+        regexp = "^[\\p{L}\\p{N}](?:[\\p{L}\\p{N} -]{0,18}[\\p{L}\\p{N}])?$",
+        message = "Enter a valid postal code."
+    )
     String postal_code,
 
     @NotBlank

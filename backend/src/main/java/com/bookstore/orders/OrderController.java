@@ -2,6 +2,8 @@ package com.bookstore.orders;
 
 import com.bookstore.orders.dto.CreateOrderRequest;
 import com.bookstore.orders.dto.OrderResponse;
+import com.bookstore.orders.dto.OrderQuoteRequest;
+import com.bookstore.orders.dto.OrderQuoteResponse;
 
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
@@ -16,9 +18,16 @@ import java.util.List;
 public class OrderController {
 
     private final OrderService orderService;
+    private final OrderQuoteService quoteService;
 
-    public OrderController(OrderService orderService) {
+    public OrderController(OrderService orderService, OrderQuoteService quoteService) {
         this.orderService = orderService;
+        this.quoteService = quoteService;
+    }
+
+    @PostMapping("/quote")
+    public ResponseEntity<OrderQuoteResponse> quote(@Valid @RequestBody OrderQuoteRequest request) {
+        return ResponseEntity.ok(quoteService.quote(request));
     }
 
     @PostMapping
