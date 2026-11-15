@@ -75,6 +75,14 @@ public class OrderCreationService {
                     "Book ID " + line.book_id() + " was not found."
                 ));
 
+            if (!book.isListed()) {
+                throw new OrderException(
+                    409,
+                    "book_unavailable",
+                    "'" + book.getTitle() + "' is no longer available."
+                );
+            }
+
             books.put(book.getId(), book);
 
             subtotal = subtotal.add(
@@ -199,7 +207,9 @@ public class OrderCreationService {
             order.getTax(),
             order.getDiscount(),
             order.getTotal(),
-            items
+            items,
+            order.getCreatedAt(),
+            null
         );
     }
 }

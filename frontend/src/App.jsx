@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { clearCart as clearCartRequest, getBook, getBooks, getCart, getCurrentUser, getOrder, getOrderQuote, logout, placeOrder, removeCartItem, updateCartItem } from './api.js';
+import { cancelOrder, clearCart as clearCartRequest, getBook, getBooks, getCart, getMe, getOrder, getOrderQuote, placeOrder, removeCartItem, updateCartItem } from './api.js';
+import AccountPanel from './AccountPanel.jsx';
+import SellerDashboard from './SellerDashboard.jsx';
+import AdminDashboard from './AdminDashboard.jsx';
 import { bookHash, bookIdFromHash, emptyFilters, filterBooks, hasActiveFilters, priceFilterError, sortBooks, sortOptions } from './catalogue.js';
-import RegistrationForm from './RegistrationForm.jsx';
-import LoginForm from './LoginForm.jsx';
 
 const currency = (value) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(value);
 const emptyForm = { name: '', email: '', phone: '', address_line: '', city: '', state: '', postal_code: '', country: '' };
@@ -109,6 +110,13 @@ export default function App() {
   const [lookupError, setLookupError] = useState('');
   const [lookupLoading, setLookupLoading] = useState(false);
   const [user, setUser] = useState(null);
+  const [confirmCancelId, setConfirmCancelId] = useState(null);
+  const [cancellingId, setCancellingId] = useState(null);
+
+  useEffect(() => {
+    // A 401 just means nobody is signed in; guests can still browse and check out.
+    Promise.resolve(getMe?.()).then((me) => { if (me?.role) setUser(me); }).catch(() => {});
+  }, []);
 
   const remember = useCallback((list) => {
     setKnown((current) => ({ ...current, ...Object.fromEntries(list.map((book) => [book.id, book])) }));
@@ -133,16 +141,6 @@ export default function App() {
     setCart(Object.fromEntries(response.items.map((item) => [item.book_id, item.quantity])));
     setCartSubtotal(response.subtotal);
   }, [remember]);
-
-  useEffect(() => {
-    let active = true;
-    getCurrentUser()
-      .then((authenticatedUser) => { if (active) setUser(authenticatedUser); })
-      .catch((error) => {
-        if (active && error.status !== 401) setNotice(error.message);
-      });
-    return () => { active = false; };
-  }, []);
 
   useEffect(() => {
     getCart()
@@ -180,6 +178,10 @@ export default function App() {
   const filtersActive = hasActiveFilters(filters) || sort !== 'featured';
   const updateFilter = (key, value) => setFilters((current) => ({ ...current, [key]: value }));
   function resetFilters() { setFilters(emptyFilters); setSort('featured'); }
+
+  function refreshCatalogue() {
+    getBooks({ q: query, category }).then((list) => { setBooks(list); remember(list); }).catch(() => {});
+  }
 
   function toggleWishlist(book) {
     const saved = wishlist.some((savedBook) => String(savedBook.id) === String(book.id));
@@ -354,46 +356,44 @@ export default function App() {
     }).finally(() => setLookupLoading(false));
   }
 
-  function signIn(authenticatedUser) {
-    setUser(authenticatedUser);
-    setNotice(`Welcome back, ${authenticatedUser.name}.`);
-    setView('shop');
+  function cancel(order) {
+    setCancellingId(order.order_id); setNotice('');
+    cancelOrder(order.order_id)
+      .then((updated) => {
+        setOrders((current) => current.map((entry) => (entry.order?.order_id === updated.order_id ? { ...entry, order: updated } : entry)));
+        setNotice(updated.refund ? `Order cancelled. Refund of ${currency(updated.refund.amount)} issued.` : 'Order cancelled.');
+        return getBooks({ q: query, category }).then((list) => { setBooks(list); remember(list); }).catch(() => {});
+      })
+      .catch((error) => setNotice(error.message))
+      .finally(() => { setCancellingId(null); setConfirmCancelId(null); });
   }
 
-  async function signOut() {
-    try {
-      await logout();
-      setUser(null);
-      setNotice('You have been signed out.');
-      setView('shop');
-    } catch (error) {
-      setNotice(error.message || 'We could not sign you out. Please try again.');
-    }
+  function refundDetails(refund) {
+    return <div className="refund-box" aria-label="Refund details"><strong>Refund {refund.status === 'REFUNDED' ? 'issued' : refund.status.toLowerCase()}: {currency(refund.amount)}</strong> <small>({refund.type === 'FULL' ? 'full refund' : 'partial refund'})</small>
+      <div className="summary-line"><span>Amount paid</span><span>{currency(refund.order_total)}</span></div>
+      {refund.shipping_withheld > 0 && <div className="summary-line"><span>Shipping (not refunded)</span><span>−{currency(refund.shipping_withheld)}</span></div>}
+      {refund.cancellation_fee > 0 && <div className="summary-line"><span>Cancellation fee</span><span>−{currency(refund.cancellation_fee)}</span></div>}
+      <div className="summary-line"><span>Refunded</span><strong>{currency(refund.amount)}</strong></div></div>;
   }
 
   function orderCard(order, key) {
-    return <article className="order-card" key={key}><div className="order-heading"><div><span>Order ID</span><strong>{order.order_id}</strong></div><div><span>Status</span><strong>{order.status}</strong></div><div><span>Total</span><strong>{currency(order.total)}</strong></div></div><div className="order-items">{(order.items || []).map((item) => <div className="summary-line" key={item.book_id}><span>{item.title} <small>× {item.quantity}</small></span><span>{currency(item.line_total)}</span></div>)}</div></article>;
+    const busy = cancellingId === order.order_id;
+    return <article className="order-card" key={key}><div className="order-heading"><div><span>Order ID</span><strong>{order.order_id}</strong></div><div><span>Status</span><strong>{order.status}</strong></div><div><span>Total</span><strong>{currency(order.total)}</strong></div></div><div className="order-items">{(order.items || []).map((item) => <div className="summary-line" key={item.book_id}><span>{item.title} <small>× {item.quantity}</small></span><span>{currency(item.line_total)}</span></div>)}</div>
+      {order.refund && refundDetails(order.refund)}
+      {order.status === 'CONFIRMED' && (confirmCancelId === order.order_id
+        ? <div className="row-actions"><span>Cancel this order? Stock is returned and a refund is calculated.</span><button className="primary-button" onClick={() => cancel(order)} disabled={busy}>{busy ? 'Cancelling…' : 'Yes, cancel order'}</button><button className="text-button" onClick={() => setConfirmCancelId(null)} disabled={busy}>Keep order</button></div>
+        : <button className="text-button" onClick={() => setConfirmCancelId(order.order_id)} aria-label={`Cancel order ${order.order_id}`}>Cancel order</button>)}
+    </article>;
   }
 
   return <div className="site-shell">
     <header className="topbar"><a className="brand" href="#shop" onClick={() => setView('shop')} aria-label="Fieldnotes Books home"><span className="brand-mark">F</span><span>fieldnotes<span className="brand-light">books</span></span></a>
-      <nav aria-label="Main navigation"><button className={view === 'shop' ? 'nav-link active' : 'nav-link'} onClick={backToShelf}>Browse books</button><button className={view === 'wishlist' ? 'nav-link wishlist-nav active' : 'nav-link wishlist-nav'} onClick={() => setView('wishlist')} aria-label={`Wishlist, ${wishlist.length} saved ${wishlist.length === 1 ? 'book' : 'books'}`}><span>Wishlist</span><span className="cart-count">{wishlist.length}</span></button><button className={view === 'orders' ? 'nav-link active' : 'nav-link'} onClick={() => setView('orders')}>Orders</button>{user ? <><span className="nav-user" aria-label={`Signed in as ${user.name}`}>{user.name}</span><button className="nav-link" onClick={signOut}>Sign out</button></> : <><button className={view === 'login' ? 'nav-link active' : 'nav-link'} onClick={() => { setNotice(''); setView('login'); }}>Sign in</button><button className={view === 'register' ? 'nav-link active' : 'nav-link'} onClick={() => { setNotice(''); setView('register'); }}>Register</button></>}<button className="cart-link" onClick={() => setView('cart')} aria-label={`Shopping bag, ${items.reduce((n, item) => n + item.quantity, 0)} items`}><span>Bag</span><span className="cart-count">{items.reduce((n, item) => n + item.quantity, 0)}</span></button></nav>
+      <nav aria-label="Main navigation"><button className={view === 'shop' ? 'nav-link active' : 'nav-link'} onClick={backToShelf}>Browse books</button><button className={view === 'wishlist' ? 'nav-link wishlist-nav active' : 'nav-link wishlist-nav'} onClick={() => setView('wishlist')} aria-label={`Wishlist, ${wishlist.length} saved ${wishlist.length === 1 ? 'book' : 'books'}`}><span>Wishlist</span><span className="cart-count">{wishlist.length}</span></button><button className={view === 'orders' ? 'nav-link active' : 'nav-link'} onClick={() => setView('orders')}>Orders</button><button className="cart-link" onClick={() => setView('cart')} aria-label={`Shopping bag, ${items.reduce((n, item) => n + item.quantity, 0)} items`}><span>Bag</span><span className="cart-count">{items.reduce((n, item) => n + item.quantity, 0)}</span></button>{user?.role === 'ADMIN' && <button className={view === 'admin' ? 'nav-link active' : 'nav-link'} onClick={() => setView('admin')}>Admin</button>}{user?.role === 'SELLER' && <button className={view === 'seller' ? 'nav-link active' : 'nav-link'} onClick={() => setView('seller')}>Seller dashboard</button>}<button className={view === 'account' ? 'nav-link active' : 'nav-link'} onClick={() => setView('account')}>{user ? 'Account' : 'Sign in'}</button></nav>
     </header>
     <main>
       <section className="hero"><p className="eyebrow">A good book finds its way</p><h1>Stories for the<br /><em>in-between moments.</em></h1><p className="hero-copy">A small, thoughtful shelf of books to keep you curious.</p><div className="hero-stamp" aria-hidden="true">READ<br />MORE</div></section>
       {notice && <div className="notice" role="status">{notice}</div>}
       {(loading || cartLoading) && <p className="loading" role="status">Loading the bookshelf…</p>}
-      {view === 'register' && <RegistrationForm
-        onCancel={() => setView('shop')}
-        onSuccess={(user) => {
-          setNotice(`Account created for ${user.name}.`);
-          setView('shop');
-        }}
-      />}
-      {view === 'login' && <LoginForm
-        onCancel={() => setView('shop')}
-        onSuccess={signIn}
-      />}
       {!loading && !cartLoading && view === 'shop' && <section className="catalog" aria-labelledby="catalog-title"><div className="section-heading"><div><p className="eyebrow">The collection</p><h2 id="catalog-title">Find your next favourite</h2></div><span className="book-count" role="status">{visibleBooks.length === books.length ? `${books.length} ${books.length === 1 ? 'book' : 'books'} on the shelf` : `Showing ${visibleBooks.length} of ${books.length} books`}</span></div>
         <div className="catalog-tools"><label className="search-box" htmlFor="book-search"><span className="visually-hidden">Search books</span><input id="book-search" type="search" placeholder="Search by title, author or topic" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
           <div className="category-filter" role="group" aria-label="Filter by category">{['All', ...categories].map((name) => <button key={name} className={name === category ? 'chip active' : 'chip'} aria-pressed={name === category} onClick={() => setCategory(name)}>{name}</button>)}</div></div>
@@ -433,6 +433,9 @@ export default function App() {
         {items.length > 0 && <aside className="summary-card" aria-label="Order summary"><p className="eyebrow">Your books</p><h3>Order summary</h3>{quoteLoading && <p role="status">Calculating your order total…</p>}{quoteError && <div className="quote-error" role="alert"><p>{quoteError}</p><button type="button" className="back-link" onClick={() => setQuoteRefresh((current) => current + 1)}>Retry total calculation</button></div>}{quote && <><p className="summary-count">{quote.item_count} {quote.item_count === 1 ? 'item' : 'items'}</p>{quote.items.map((item) => <div className="summary-line" key={item.book_id}><span>{item.title}<small className="summary-author">{item.author}</small><small>× {item.quantity} · {currency(item.unit_price)} each</small></span><strong>{currency(item.line_total)}</strong></div>)}<div className="summary-line"><span>Subtotal</span><strong>{currency(quote.subtotal)}</strong></div>{quote.shipping > 0 && <div className="summary-line"><span>Shipping</span><strong>{currency(quote.shipping)}</strong></div>}{quote.tax > 0 && <div className="summary-line"><span>Tax</span><strong>{currency(quote.tax)}</strong></div>}{quote.discount > 0 && <div className="summary-line"><span>Discount</span><strong>−{currency(quote.discount)}</strong></div>}<div className="summary-total"><span>Final payable amount</span><strong>{currency(quote.total)}</strong></div><p className="summary-note">Prices and totals calculated by the bookstore server.</p></>}</aside>}</section>}
       {view === 'confirmation' && confirmation && <section className="confirmation"><div className="success-mark" aria-hidden="true">✓</div><p className="eyebrow">All set</p><h2>Thank you for your order.</h2><p>Your payment was approved by the simulator. Your books are on their way to the address you provided.</p><div className="confirmation-card"><div><span>Order ID</span><strong>{confirmation.order_id}</strong></div><div><span>Status</span><strong>{confirmation.status}</strong></div><div><span>Confirmed total</span><strong>{currency(confirmation.total)}</strong></div>{confirmation.items.map((item) => <div key={item.book_id}><span>{item.title} × {item.quantity}</span><strong>{currency(item.line_total)}</strong></div>)}</div><button className="primary-button" onClick={() => setView('shop')}>Back to the bookshelf</button></section>}
       {!loading && !cartLoading && view === 'orders' && <section className="orders-view"><div className="section-heading"><div><p className="eyebrow">Your bookshelf, in progress</p><h2>Order history</h2></div></div><form className="order-lookup" onSubmit={lookupOrder}><label htmlFor="order-lookup-id">Look up an order</label><div><input id="order-lookup-id" aria-label="Order ID" value={lookupId} onChange={(event) => setLookupId(event.target.value)} /><button className="primary-button" disabled={lookupLoading}>{lookupLoading ? 'Looking up…' : 'Find order'}</button></div>{lookupError && <p className="order-error" role="status">{lookupError}</p>}</form>{ordersLoading ? <p className="loading" role="status">Loading your orders…</p> : orders.length === 0 ? <div className="empty-state"><h3>No orders yet.</h3><button className="primary-button" onClick={() => setView('shop')}>Back to the shelf</button></div> : <div className="order-list">{orders.map(({ id, order, error }) => order ? orderCard(order, id) : <p className="order-error" role="status" key={id}>Could not load order {id}: {error}</p>)}</div>}</section>}
+      {view === 'admin' && user?.role === 'ADMIN' && <AdminDashboard currentUserId={user.id} onCatalogueChanged={refreshCatalogue} />}
+      {view === 'seller' && user?.role === 'SELLER' && <SellerDashboard onCatalogueChanged={refreshCatalogue} />}
+      {view === 'account' && <AccountPanel user={user} onSignedIn={(me) => { setUser(me); setNotice(`Signed in as ${me.display_name}.`); setView('shop'); }} onSignedOut={() => { setUser(null); setNotice('You have signed out.'); setView('shop'); }} />}
     </main>
     <footer><span>fieldnotes<span className="brand-light">books</span></span><span>Good books. Thoughtfully found.</span></footer>
   </div>;

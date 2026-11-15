@@ -4,15 +4,11 @@ async function request(path, options = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000);
   try {
-    const method = (options.method || 'GET').toUpperCase();
-    const csrfHeaders = ['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(method)
-      ? {}
-      : await getCsrfHeaders(controller.signal);
     const response = await fetch(`${base}${path}`, {
       ...options,
       credentials: 'include',
       signal: controller.signal,
-      headers: { 'Content-Type': 'application/json', ...csrfHeaders, ...options.headers },
+      headers: { 'Content-Type': 'application/json', ...options.headers },
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -21,10 +17,7 @@ async function request(path, options = {}) {
       // GET /api/books/{id}) only has { status, error, message }; keep the HTTP status for callers.
       const fallback = response.status === 404 ? 'Not found.' : 'The request could not be completed.';
       const message = typeof detail === 'string' ? detail : detail?.message || fallback;
-      const fieldErrors = Array.isArray(detail?.fields)
-        ? Object.fromEntries(detail.fields.map(({ field, message: fieldMessage }) => [field, fieldMessage]))
-        : {};
-      throw Object.assign(new Error(message), { status: response.status, fieldErrors });
+      throw Object.assign(new Error(message), { status: response.status, code: detail?.code, fields: detail?.fields || [] });
     }
     return body;
   } catch (error) {
@@ -36,19 +29,6 @@ async function request(path, options = {}) {
   }
 }
 
-async function getCsrfHeaders(signal) {
-  const response = await fetch(`${base}/api/auth/csrf`, {
-    credentials: 'include',
-    signal,
-  });
-  if (!response.ok) throw new Error('Could not establish a secure session. Please try again.');
-  const csrf = await response.json();
-  if (!csrf.token || !csrf.headerName) {
-    throw new Error('The server did not provide a CSRF token.');
-  }
-  return { [csrf.headerName]: csrf.token };
-}
-
 export const getBooks = ({ q = '', category = '' } = {}) => {
   const params = new URLSearchParams();
   if (q.trim()) params.set('q', q.trim());
@@ -57,25 +37,6 @@ export const getBooks = ({ q = '', category = '' } = {}) => {
   return request(`/api/books${query ? `?${query}` : ''}`);
 };
 export const getBook = (id) => request(`/api/books/${encodeURIComponent(id)}`);
-
-export const register = (user) =>
-  request('/api/auth/register', {
-    method: 'POST',
-    body: JSON.stringify(user),
-  });
-
-export const login = (credentials) =>
-  request('/api/auth/login', {
-    method: 'POST',
-    body: JSON.stringify(credentials),
-  });
-
-export const logout = () =>
-  request('/api/auth/logout', {
-    method: 'POST',
-  });
-
-export const getCurrentUser = () => request('/api/auth/me');
 
 export const getOrderQuote = (items) =>
   request('/api/orders/quote', {
@@ -110,3 +71,29 @@ export const placeOrder = (order, idempotencyKey) =>
 
 export const getOrder = (id) =>
   request(`/api/orders/${encodeURIComponent(id)}`);
+
+// Accounts and roles (login is session-based; the browser sends the session cookie automatically).
+export const register = (account) => request('/api/auth/register', { method: 'POST', body: JSON.stringify(account) });
+export const login = (email, password) => request('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+export const logout = () => request('/api/auth/logout', { method: 'POST' });
+export const getMe = () => request('/api/auth/me');
+
+// Seller listing management (#72). The server only lets a seller change their own listings.
+export const getMyListings = () => request('/api/seller/books');
+export const createListing = (listing) => request('/api/seller/books', { method: 'POST', body: JSON.stringify(listing) });
+export const updateListing = (id, listing) => request(`/api/seller/books/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(listing) });
+export const deactivateListing = (id) => request(`/api/seller/books/${encodeURIComponent(id)}`, { method: 'DELETE' });
+export const activateListing = (id) => request(`/api/seller/books/${encodeURIComponent(id)}/activate`, { method: 'POST' });
+
+// Administrator functions (#73). Every /api/admin call is rejected by the server unless you are an ADMIN.
+export const getAdminSummary = () => request('/api/admin/summary');
+export const getAdminUsers = () => request('/api/admin/users');
+export const setUserActive = (id, active) => request(`/api/admin/users/${encodeURIComponent(id)}/${active ? 'activate' : 'deactivate'}`, { method: 'POST' });
+export const getAdminBooks = () => request('/api/admin/books');
+export const updateAdminBook = (id, listing) => request(`/api/admin/books/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(listing) });
+export const setBookActive = (id, active) => request(`/api/admin/books/${encodeURIComponent(id)}/${active ? 'activate' : 'deactivate'}`, { method: 'POST' });
+export const getAdminOrders = () => request('/api/admin/orders');
+export const getAuditLog = () => request('/api/admin/audit-log');
+
+// Order cancellation and refund (#71). The server calculates the refund from the stored order totals.
+export const cancelOrder = (id) => request(`/api/orders/${encodeURIComponent(id)}/cancel`, { method: 'POST' });

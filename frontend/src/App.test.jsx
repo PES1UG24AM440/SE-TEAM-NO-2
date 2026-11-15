@@ -3,32 +3,30 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App.jsx';
 import {
+  cancelOrder,
   clearCart,
   getBook,
   getBooks,
   getCart,
-  getCurrentUser,
+  getMe,
   getOrder,
   getOrderQuote,
-  login,
-  logout,
   placeOrder,
-  register,
   removeCartItem,
   updateCartItem,
 } from './api.js';
-vi.mock('./api.js', () => ({
+// Real exports are kept (and the ones App uses are replaced) so new api.js functions do not break this mock.
+vi.mock('./api.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  cancelOrder: vi.fn(),
   clearCart: vi.fn(),
   getBook: vi.fn(),
   getBooks: vi.fn(),
   getCart: vi.fn(),
-  getCurrentUser: vi.fn(),
+  getMe: vi.fn(),
   getOrder: vi.fn(),
   getOrderQuote: vi.fn(),
-  login: vi.fn(),
-  logout: vi.fn(),
   placeOrder: vi.fn(),
-  register: vi.fn(),
   removeCartItem: vi.fn(),
   updateCartItem: vi.fn(),
 }));
@@ -55,8 +53,8 @@ beforeEach(() => {
 
   getBooks.mockResolvedValue(fixture);
   getCart.mockResolvedValue({ items: [], subtotal: 0 });
-  getCurrentUser.mockRejectedValue(Object.assign(new Error('Authentication is required.'), { status: 401 }));
   getOrder.mockResolvedValue({});
+  getMe.mockRejectedValue(Object.assign(new Error('Please sign in to continue.'), { status: 401 }));
 
   getOrderQuote.mockImplementation((items) =>
     Promise.resolve({
@@ -450,98 +448,6 @@ describe('saved books and wishlist', () => {
   });
 });
 
-describe('customer registration', () => {
-  it('validates required fields and password strength before submitting', async () => {
-    const user = userEvent.setup();
-    render(<App />);
-    await user.click(await screen.findByRole('button', { name: 'Register' }));
-    await user.click(screen.getByRole('button', { name: 'Create account' }));
-
-    expect(screen.getByText('Name is required.')).toBeInTheDocument();
-    expect(screen.getByText('Email is required.')).toBeInTheDocument();
-    expect(screen.getByText('Password is required.')).toBeInTheDocument();
-    expect(register).not.toHaveBeenCalled();
-  });
-
-  it('submits valid registration and returns to the bookshelf', async () => {
-    const user = userEvent.setup();
-    register.mockResolvedValue({ id: 1, name: 'Ada Reader', email: 'ada@example.com' });
-    render(<App />);
-    await user.click(await screen.findByRole('button', { name: 'Register' }));
-    await user.type(screen.getByLabelText(/Full name/), 'Ada Reader');
-    await user.type(screen.getByLabelText(/^Email/), 'ada@example.com');
-    await user.type(screen.getByLabelText(/^Password/), 'SecurePass1!');
-    await user.click(screen.getByRole('button', { name: 'Create account' }));
-
-    expect(register).toHaveBeenCalledWith({
-      name: 'Ada Reader',
-      email: 'ada@example.com',
-      password: 'SecurePass1!',
-    });
-    expect(await screen.findByText('Account created for Ada Reader.')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Find your next favourite' })).toBeInTheDocument();
-  });
-
-  it('shows duplicate email errors from the server', async () => {
-    const user = userEvent.setup();
-    register.mockRejectedValue(Object.assign(
-      new Error('An account with this email already exists.'),
-      { status: 409 },
-    ));
-    render(<App />);
-    await user.click(await screen.findByRole('button', { name: 'Register' }));
-    await user.type(screen.getByLabelText(/Full name/), 'Ada Reader');
-    await user.type(screen.getByLabelText(/^Email/), 'ada@example.com');
-    await user.type(screen.getByLabelText(/^Password/), 'SecurePass1!');
-    await user.click(screen.getByRole('button', { name: 'Create account' }));
-
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'An account with this email already exists.',
-    );
-    expect(screen.getByRole('button', { name: 'Create account' })).toBeEnabled();
-  });
-});
-
-describe('customer authentication', () => {
-  it('signs in and signs out using the session-backed account', async () => {
-    const user = userEvent.setup();
-    login.mockResolvedValue({
-      id: 1,
-      name: 'Ada Reader',
-      email: 'ada@example.com',
-      role: 'CUSTOMER',
-    });
-    logout.mockResolvedValue(undefined);
-    render(<App />);
-
-    await user.click(await screen.findByRole('button', { name: 'Sign in' }));
-    await user.type(screen.getByLabelText('Email'), 'ada@example.com');
-    await user.type(screen.getByLabelText('Password'), 'SecurePass1!');
-    fireEvent.submit(screen.getByLabelText('Email').closest('form'));
-
-    expect(await screen.findByLabelText('Signed in as Ada Reader')).toBeInTheDocument();
-    expect(login).toHaveBeenCalledWith({
-      email: 'ada@example.com',
-      password: 'SecurePass1!',
-    });
-    await user.click(screen.getByRole('button', { name: 'Sign out' }));
-    expect(await screen.findByRole('button', { name: 'Sign in' })).toBeInTheDocument();
-    expect(logout).toHaveBeenCalledOnce();
-  });
-
-  it('displays invalid credential errors without signing in', async () => {
-    login.mockRejectedValue(Object.assign(new Error('Invalid email or password.'), { status: 401 }));
-    const user = userEvent.setup();
-    render(<App />);
-    await user.click(await screen.findByRole('button', { name: 'Sign in' }));
-    await user.type(screen.getByLabelText('Email'), 'ada@example.com');
-    await user.type(screen.getByLabelText('Password'), 'wrong');
-    fireEvent.submit(screen.getByLabelText('Email').closest('form'));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Invalid email or password.');
-    expect(screen.queryByLabelText('Signed in as Ada Reader')).not.toBeInTheDocument();
-  });
-});
-
 describe('catalogue details, sorting and filters', () => {
   const shelf = [
     { id: 1, title: 'The Alchemist', author: 'Paulo Coelho', category: 'Fiction', description: 'A shepherd follows his dream.', price: 299, stock: 2 },
@@ -610,5 +516,76 @@ describe('catalogue details, sorting and filters', () => {
     render(<App />);
     expect(await screen.findByRole('alert')).toHaveTextContent('We could not find that book.');
     expect(screen.getByRole('heading', { name: 'Book unavailable' })).toBeInTheDocument();
+  });
+});
+
+describe('role-based navigation', () => {
+  it('shows no seller or admin links to guests and customers', async () => {
+    getMe.mockResolvedValue({ id: 3, email: 'c@x.test', display_name: 'Cara', role: 'CUSTOMER', active: true });
+    render(<App />);
+    expect(await screen.findByRole('button', { name: 'Account' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Seller dashboard' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Admin' })).toBeNull();
+  });
+
+  it('shows the seller dashboard link to sellers only', async () => {
+    getMe.mockResolvedValue({ id: 4, email: 's@x.test', display_name: 'Sam', role: 'SELLER', active: true });
+    render(<App />);
+    expect(await screen.findByRole('button', { name: 'Seller dashboard' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Admin' })).toBeNull();
+  });
+
+  it('shows the admin link to administrators only', async () => {
+    getMe.mockResolvedValue({ id: 1, email: 'a@x.test', display_name: 'Ada', role: 'ADMIN', active: true });
+    render(<App />);
+    expect(await screen.findByRole('button', { name: 'Admin' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Seller dashboard' })).toBeNull();
+  });
+});
+
+describe('order cancellation and refund (#71)', () => {
+  const confirmed = { order_id: 'order-71', status: 'CONFIRMED', subtotal: 200, shipping: 40, tax: 10, discount: 10, total: 240, items: [{ book_id: 1, title: 'The Alchemist', quantity: 2, unit_price: 100, line_total: 200 }], refund: null };
+  const partialRefund = { amount: 180, status: 'REFUNDED', type: 'PARTIAL', order_total: 240, shipping_withheld: 40, cancellation_fee: 20, created_at: '2026-11-15T03:00:00Z' };
+
+  beforeEach(() => {
+    localStorage.setItem('fieldnotes-order-ids', JSON.stringify(['order-71']));
+  });
+
+  it('asks for confirmation, cancels, and shows the refund breakdown', async () => {
+    getOrder.mockResolvedValue(confirmed);
+    cancelOrder.mockResolvedValue({ ...confirmed, status: 'CANCELLED', refund: partialRefund });
+    const user = userEvent.setup(); render(<App />);
+    await user.click(await screen.findByRole('button', { name: 'Orders' }));
+    await user.click(await screen.findByRole('button', { name: 'Cancel order order-71' }));
+    expect(cancelOrder).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Yes, cancel order' }));
+
+    expect(cancelOrder).toHaveBeenCalledWith('order-71');
+    expect(await screen.findByText('Order cancelled. Refund of ₹180.00 issued.')).toBeInTheDocument();
+    const refund = screen.getByLabelText('Refund details');
+    expect(refund).toHaveTextContent('partial refund');
+    expect(refund).toHaveTextContent('Shipping (not refunded)');
+    expect(refund).toHaveTextContent('Cancellation fee');
+    expect(screen.queryByRole('button', { name: 'Cancel order order-71' })).toBeNull();
+  });
+
+  it('keeps the order when the server says it is not eligible', async () => {
+    getOrder.mockResolvedValue(confirmed);
+    cancelOrder.mockRejectedValue(Object.assign(new Error('Orders can only be cancelled within 24 hours of being placed.'), { status: 409 }));
+    const user = userEvent.setup(); render(<App />);
+    await user.click(await screen.findByRole('button', { name: 'Orders' }));
+    await user.click(await screen.findByRole('button', { name: 'Cancel order order-71' }));
+    await user.click(screen.getByRole('button', { name: 'Yes, cancel order' }));
+    expect(await screen.findByText('Orders can only be cancelled within 24 hours of being placed.')).toBeInTheDocument();
+    expect(screen.getByText('CONFIRMED')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Refund details')).toBeNull();
+  });
+
+  it('shows the stored refund on an already cancelled order and offers no cancel button', async () => {
+    getOrder.mockResolvedValue({ ...confirmed, status: 'CANCELLED', refund: { ...partialRefund, type: 'FULL', amount: 240, shipping_withheld: 0, cancellation_fee: 0 } });
+    const user = userEvent.setup(); render(<App />);
+    await user.click(await screen.findByRole('button', { name: 'Orders' }));
+    expect(await screen.findByLabelText('Refund details')).toHaveTextContent('full refund');
+    expect(screen.queryByRole('button', { name: 'Cancel order order-71' })).toBeNull();
   });
 });
