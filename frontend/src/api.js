@@ -84,3 +84,13 @@ export const createListing = (listing) => request('/api/seller/books', { method:
 export const updateListing = (id, listing) => request(`/api/seller/books/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(listing) });
 export const deactivateListing = (id) => request(`/api/seller/books/${encodeURIComponent(id)}`, { method: 'DELETE' });
 export const activateListing = (id) => request(`/api/seller/books/${encodeURIComponent(id)}/activate`, { method: 'POST' });
+
+// Administrator functions (#73). Every /api/admin call is rejected by the server unless you are an ADMIN.
+export const getAdminSummary = () => request('/api/admin/summary');
+export const getAdminUsers = () => request('/api/admin/users');
+export const setUserActive = (id, active) => request(`/api/admin/users/${encodeURIComponent(id)}/${active ? 'activate' : 'deactivate'}`, { method: 'POST' });
+export const getAdminBooks = () => request('/api/admin/books');
+export const updateAdminBook = (id, listing) => request(`/api/admin/books/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(listing) });
+export const setBookActive = (id, active) => request(`/api/admin/books/${encodeURIComponent(id)}/${active ? 'activate' : 'deactivate'}`, { method: 'POST' });
+export const getAdminOrders = () => request('/api/admin/orders');
+export const getAuditLog = () => request('/api/admin/audit-log');

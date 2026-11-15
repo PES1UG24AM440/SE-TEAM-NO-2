@@ -22,7 +22,7 @@ mysql -u bookstore_app -p < database/verify_setup.sql
 
 Every required table must report `OK`, and `books_in_catalogue` must be greater than 0.
 
-Already have an older `online_bookstore` database? Back it up, then apply `database/migrate_books_for_spring.sql` `database/migrate_order_session_ownership.sql` and `database/migrate_auth_users.sql`, then `database/migrate_seller_listings.sql` (the verify script tells you if the second one is missing).
+Already have an older `online_bookstore` database? Back it up, then apply `database/migrate_books_for_spring.sql` `database/migrate_order_session_ownership.sql` and `database/migrate_auth_users.sql`, then `database/migrate_seller_listings.sql` and `database/migrate_admin_audit_log.sql` (the verify script tells you if the second one is missing).
 
 ## 2. Spring Boot backend (Java 25, Maven 3.9+)
 
@@ -83,6 +83,24 @@ be ordered, but past orders keep it. Editing another seller's listing returns **
 | PUT | `/api/seller/books/{id}` | Edit title, author, category, description, price, stock |
 | DELETE | `/api/seller/books/{id}` | Remove (deactivate) |
 | POST | `/api/seller/books/{id}/activate` | Relist |
+
+### Admin dashboard (#73)
+
+Sign in with the admin account (see the environment variables above) and open **Admin**.
+All `/api/admin/**` endpoints are enforced on the server: guests get **401**, customers and
+sellers get **403**. Every change is written to `audit_log` (who, what, which record, when)
+in the same transaction as the change itself.
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| GET | `/api/admin/summary` | Catalogue, user and order counts |
+| GET | `/api/admin/users` | All accounts |
+| POST | `/api/admin/users/{id}/activate` · `/deactivate` | Re-enable / disable an account (not your own) |
+| GET | `/api/admin/books` | Every listing, including removed ones |
+| PUT | `/api/admin/books/{id}` | Edit any listing |
+| POST | `/api/admin/books/{id}/activate` · `/deactivate` | Relist / remove any listing |
+| GET | `/api/admin/orders` · `/api/admin/orders/{id}` | Inspect orders from every customer |
+| GET | `/api/admin/audit-log` | Latest 200 administrative actions |
 
 ## 3. React frontend (Node 20+)
 

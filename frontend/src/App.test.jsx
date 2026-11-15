@@ -14,7 +14,9 @@ import {
   removeCartItem,
   updateCartItem,
 } from './api.js';
-vi.mock('./api.js', () => ({
+// Real exports are kept (and the ones App uses are replaced) so new api.js functions do not break this mock.
+vi.mock('./api.js', async (importOriginal) => ({
+  ...(await importOriginal()),
   clearCart: vi.fn(),
   getBook: vi.fn(),
   getBooks: vi.fn(),
@@ -512,5 +514,29 @@ describe('catalogue details, sorting and filters', () => {
     render(<App />);
     expect(await screen.findByRole('alert')).toHaveTextContent('We could not find that book.');
     expect(screen.getByRole('heading', { name: 'Book unavailable' })).toBeInTheDocument();
+  });
+});
+
+describe('role-based navigation', () => {
+  it('shows no seller or admin links to guests and customers', async () => {
+    getMe.mockResolvedValue({ id: 3, email: 'c@x.test', display_name: 'Cara', role: 'CUSTOMER', active: true });
+    render(<App />);
+    expect(await screen.findByRole('button', { name: 'Account' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Seller dashboard' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Admin' })).toBeNull();
+  });
+
+  it('shows the seller dashboard link to sellers only', async () => {
+    getMe.mockResolvedValue({ id: 4, email: 's@x.test', display_name: 'Sam', role: 'SELLER', active: true });
+    render(<App />);
+    expect(await screen.findByRole('button', { name: 'Seller dashboard' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Admin' })).toBeNull();
+  });
+
+  it('shows the admin link to administrators only', async () => {
+    getMe.mockResolvedValue({ id: 1, email: 'a@x.test', display_name: 'Ada', role: 'ADMIN', active: true });
+    render(<App />);
+    expect(await screen.findByRole('button', { name: 'Admin' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Seller dashboard' })).toBeNull();
   });
 });

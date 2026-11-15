@@ -159,7 +159,22 @@ SET @sql = IF(@fk_exists = 0,
     'SELECT 1');
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
--- 7. SEED BOOKS
+-- 7. ADMINISTRATOR AUDIT LOG (#73). actor_email is copied so entries stay readable.
+CREATE TABLE IF NOT EXISTS audit_log (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    actor_user_id BIGINT NOT NULL,
+    actor_email VARCHAR(254) NOT NULL,
+    action VARCHAR(50) NOT NULL,
+    target_type VARCHAR(30) NOT NULL,
+    target_id VARCHAR(64) NOT NULL,
+    details VARCHAR(500) NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    INDEX idx_audit_log_created (created_at),
+    INDEX idx_audit_log_target (target_type, target_id)
+);
+
+-- 8. SEED BOOKS
 INSERT INTO books (id, title, author, category, description, price, stock)
 VALUES
     (1, 'The Alchemist', 'Paulo Coelho', 'Fiction',

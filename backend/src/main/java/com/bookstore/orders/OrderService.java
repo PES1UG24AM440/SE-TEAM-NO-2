@@ -1,6 +1,7 @@
 package com.bookstore.orders;
 
 import com.bookstore.books.BookRepository;
+import com.bookstore.orders.dto.AdminOrderResponse;
 import com.bookstore.orders.dto.CreateOrderRequest;
 import com.bookstore.orders.dto.OrderResponse;
 
@@ -151,6 +152,35 @@ public class OrderService {
 
         inventoryMovementRepository.saveAllAndFlush(restockMovements);
         return toResponse(order);
+    }
+
+    /** Administrator view of every order (#73); access is restricted to ADMIN in SecurityConfig. */
+    @Transactional(readOnly = true)
+    public List<AdminOrderResponse> getAllOrdersForAdmin() {
+        return orderRepository.findAllByOrderByIdDesc()
+            .stream()
+            .map(this::toAdminResponse)
+            .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public AdminOrderResponse getOrderForAdmin(String orderId) {
+        return orderRepository.findWithItemsById(orderId)
+            .map(this::toAdminResponse)
+            .orElseThrow(() -> orderNotFound(orderId));
+    }
+
+    private AdminOrderResponse toAdminResponse(Order order) {
+        String address = String.join(", ",
+            order.getAddressLine(), order.getCity(), order.getState(),
+            order.getPostalCode(), order.getCountry());
+        return new AdminOrderResponse(
+            order.getCustomerName(),
+            order.getEmail(),
+            order.getPhone(),
+            address,
+            toResponse(order)
+        );
     }
 
     private OrderException orderNotFound(String orderId) {

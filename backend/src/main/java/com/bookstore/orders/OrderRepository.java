@@ -20,6 +20,18 @@ public interface OrderRepository extends JpaRepository<Order, String> {
     @EntityGraph(attributePaths = {"items", "items.book"})
     Optional<Order> findByIdAndOwnerSessionId(String id, String ownerSessionId);
 
+    /** Administrator order inspection (#73). */
+    @EntityGraph(attributePaths = {"items", "items.book"})
+    List<Order> findAllByOrderByIdDesc();
+
+    @EntityGraph(attributePaths = {"items", "items.book"})
+    Optional<Order> findWithItemsById(String id);
+
+    long countByStatus(OrderStatus status);
+
+    @Query("select coalesce(sum(o.total), 0) from CustomerOrder o where o.status = :status")
+    java.math.BigDecimal sumTotalByStatus(@Param("status") OrderStatus status);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
         select o from CustomerOrder o
