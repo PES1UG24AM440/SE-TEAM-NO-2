@@ -34,7 +34,9 @@ public class BookController {
 
     @GetMapping("/{id}")
     public Book getBook(@PathVariable Long id) {
+        // Deactivated listings are treated as not found by the public catalogue.
         return books.findBookById(id)
+                .filter(Book::isListed)
                 .orElseThrow(() ->
                         new ResponseStatusException(
                                 HttpStatus.NOT_FOUND,

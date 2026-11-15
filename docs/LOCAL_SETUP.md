@@ -22,7 +22,7 @@ mysql -u bookstore_app -p < database/verify_setup.sql
 
 Every required table must report `OK`, and `books_in_catalogue` must be greater than 0.
 
-Already have an older `online_bookstore` database? Back it up, then apply `database/migrate_books_for_spring.sql` `database/migrate_order_session_ownership.sql` and `database/migrate_auth_users.sql` (the verify script tells you if the second one is missing).
+Already have an older `online_bookstore` database? Back it up, then apply `database/migrate_books_for_spring.sql` `database/migrate_order_session_ownership.sql` and `database/migrate_auth_users.sql`, then `database/migrate_seller_listings.sql` (the verify script tells you if the second one is missing).
 
 ## 2. Spring Boot backend (Java 25, Maven 3.9+)
 
@@ -69,6 +69,20 @@ $env:BOOKSTORE_SELLER_PASSWORD = "<choose-a-password>"
 ```
 
 The accounts are created once; restarting does not change an existing account.
+
+### Seller dashboard (#72)
+
+Sign in with a Seller account and open **Seller dashboard** to add, edit, remove and relist
+your own books. "Remove" deactivates the listing: it disappears from the catalogue and cannot
+be ordered, but past orders keep it. Editing another seller's listing returns **403**.
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| GET | `/api/seller/books` | Your listings (including removed ones) |
+| POST | `/api/seller/books` | Create a listing |
+| PUT | `/api/seller/books/{id}` | Edit title, author, category, description, price, stock |
+| DELETE | `/api/seller/books/{id}` | Remove (deactivate) |
+| POST | `/api/seller/books/{id}/activate` | Relist |
 
 ## 3. React frontend (Node 20+)
 

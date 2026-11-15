@@ -77,3 +77,10 @@ export const register = (account) => request('/api/auth/register', { method: 'PO
 export const login = (email, password) => request('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
 export const logout = () => request('/api/auth/logout', { method: 'POST' });
 export const getMe = () => request('/api/auth/me');
+
+// Seller listing management (#72). The server only lets a seller change their own listings.
+export const getMyListings = () => request('/api/seller/books');
+export const createListing = (listing) => request('/api/seller/books', { method: 'POST', body: JSON.stringify(listing) });
+export const updateListing = (id, listing) => request(`/api/seller/books/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(listing) });
+export const deactivateListing = (id) => request(`/api/seller/books/${encodeURIComponent(id)}`, { method: 'DELETE' });
+export const activateListing = (id) => request(`/api/seller/books/${encodeURIComponent(id)}/activate`, { method: 'POST' });

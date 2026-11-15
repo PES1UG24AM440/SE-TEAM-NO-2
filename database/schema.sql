@@ -14,6 +14,10 @@ CREATE TABLE IF NOT EXISTS books (
     description TEXT NULL,
     price DECIMAL(10,2) NOT NULL,
     stock INT NOT NULL,
+    seller_id BIGINT NULL,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+
+    INDEX idx_books_seller_id (seller_id),
 
     CONSTRAINT ck_books_stock_nonnegative
         CHECK (stock >= 0),
@@ -144,6 +148,16 @@ CREATE TABLE IF NOT EXISTS users (
     CONSTRAINT uq_users_email UNIQUE (email),
     CONSTRAINT ck_users_role CHECK (role IN ('CUSTOMER', 'SELLER', 'ADMIN'))
 );
+
+-- Seller listings (#72): each listing may belong to a seller account.
+-- (Added here because users is created after books.)
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints
+                  WHERE table_schema = DATABASE() AND table_name = 'books'
+                    AND constraint_name = 'fk_books_seller');
+SET @sql = IF(@fk_exists = 0,
+    'ALTER TABLE books ADD CONSTRAINT fk_books_seller FOREIGN KEY (seller_id) REFERENCES users(id) ON DELETE RESTRICT',
+    'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- 7. SEED BOOKS
 INSERT INTO books (id, title, author, category, description, price, stock)

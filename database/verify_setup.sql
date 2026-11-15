@@ -17,6 +17,10 @@ SELECT IF(COUNT(*) = 0, 'MISSING - run database/migrate_auth_users.sql', 'OK') A
 FROM information_schema.tables
 WHERE table_schema = 'online_bookstore' AND table_name = 'users';
 
+SELECT IF(COUNT(*) = 2, 'OK', 'MISSING - run database/migrate_seller_listings.sql') AS books_seller_columns
+FROM information_schema.columns
+WHERE table_schema = 'online_bookstore' AND table_name = 'books' AND column_name IN ('seller_id', 'active');
+
 SELECT COUNT(*) AS books_in_catalogue,
        SUM(stock > 0) AS books_in_stock,
        COUNT(DISTINCT category) AS categories
