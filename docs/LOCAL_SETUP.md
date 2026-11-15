@@ -22,7 +22,7 @@ mysql -u bookstore_app -p < database/verify_setup.sql
 
 Every required table must report `OK`, and `books_in_catalogue` must be greater than 0.
 
-Already have an older `online_bookstore` database? Back it up, then apply `database/migrate_books_for_spring.sql` and `database/migrate_order_session_ownership.sql` (the verify script tells you if the second one is missing).
+Already have an older `online_bookstore` database? Back it up, then apply `database/migrate_books_for_spring.sql` `database/migrate_order_session_ownership.sql` and `database/migrate_auth_users.sql` (the verify script tells you if the second one is missing).
 
 ## 2. Spring Boot backend (Java 25, Maven 3.9+)
 
@@ -49,6 +49,26 @@ curl http://localhost:8080/api/books/1
 ```
 
 returns JSON for *The Alchemist*. `http://localhost:8080/api/books` returns the full catalogue.
+
+### Accounts and roles (Customer, Seller, Administrator)
+
+Browsing, the cart and checkout still work without signing in. The seller dashboard
+(`/api/seller/**`) and admin dashboard (`/api/admin/**`) need an account with that role:
+not signed in → **401**, wrong role → **403**.
+
+Anyone can register as a Customer or Seller from **Sign in → Create an account**.
+Administrators cannot self-register; create a demo admin (and optionally a seller) by setting
+environment variables **before** `mvn spring-boot:run`. Pick your own passwords (8+ characters);
+they are stored only as BCrypt hashes and are never committed:
+
+```powershell
+$env:BOOKSTORE_ADMIN_EMAIL = "admin@bookstore.local"
+$env:BOOKSTORE_ADMIN_PASSWORD = "<choose-a-password>"
+$env:BOOKSTORE_SELLER_EMAIL = "seller@bookstore.local"
+$env:BOOKSTORE_SELLER_PASSWORD = "<choose-a-password>"
+```
+
+The accounts are created once; restarting does not change an existing account.
 
 ## 3. React frontend (Node 20+)
 

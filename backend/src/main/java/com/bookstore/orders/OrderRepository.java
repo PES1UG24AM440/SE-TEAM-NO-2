@@ -3,6 +3,8 @@ package com.bookstore.orders;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -26,4 +28,15 @@ public interface OrderRepository extends JpaRepository<Order, String> {
     Optional<Order> findByIdAndOwnerSessionIdForUpdate(
         @Param("id") String id,
         @Param("ownerSessionId") String ownerSessionId);
+
+    /** Keeps guest orders visible after login changes the session ID (see AuthController). */
+    @Modifying
+    @Transactional
+    @Query("""
+        update CustomerOrder o set o.ownerSessionId = :newSessionId
+        where o.ownerSessionId = :oldSessionId
+        """)
+    int reassignOwnerSession(
+        @Param("oldSessionId") String oldSessionId,
+        @Param("newSessionId") String newSessionId);
 }

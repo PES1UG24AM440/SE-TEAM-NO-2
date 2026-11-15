@@ -131,7 +131,21 @@ CREATE TABLE IF NOT EXISTS cart_lines (
     INDEX idx_cart_lines_cart_key (cart_key)
 );
 
--- 6. SEED BOOKS
+-- 6. USER ACCOUNTS AND ROLES (login / RBAC, SRS OBS-F-002 and OBS-SR-002)
+CREATE TABLE IF NOT EXISTS users (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    email VARCHAR(254) NOT NULL,
+    password_hash VARCHAR(100) NOT NULL,
+    display_name VARCHAR(120) NOT NULL,
+    role VARCHAR(20) NOT NULL,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT uq_users_email UNIQUE (email),
+    CONSTRAINT ck_users_role CHECK (role IN ('CUSTOMER', 'SELLER', 'ADMIN'))
+);
+
+-- 7. SEED BOOKS
 INSERT INTO books (id, title, author, category, description, price, stock)
 VALUES
     (1, 'The Alchemist', 'Paulo Coelho', 'Fiction',

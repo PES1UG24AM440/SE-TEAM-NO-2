@@ -7,6 +7,7 @@ import {
   getBook,
   getBooks,
   getCart,
+  getMe,
   getOrder,
   getOrderQuote,
   placeOrder,
@@ -18,6 +19,7 @@ vi.mock('./api.js', () => ({
   getBook: vi.fn(),
   getBooks: vi.fn(),
   getCart: vi.fn(),
+  getMe: vi.fn(),
   getOrder: vi.fn(),
   getOrderQuote: vi.fn(),
   placeOrder: vi.fn(),
@@ -48,6 +50,7 @@ beforeEach(() => {
   getBooks.mockResolvedValue(fixture);
   getCart.mockResolvedValue({ items: [], subtotal: 0 });
   getOrder.mockResolvedValue({});
+  getMe.mockRejectedValue(Object.assign(new Error('Please sign in to continue.'), { status: 401 }));
 
   getOrderQuote.mockImplementation((items) =>
     Promise.resolve({

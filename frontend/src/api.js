@@ -17,7 +17,7 @@ async function request(path, options = {}) {
       // GET /api/books/{id}) only has { status, error, message }; keep the HTTP status for callers.
       const fallback = response.status === 404 ? 'Not found.' : 'The request could not be completed.';
       const message = typeof detail === 'string' ? detail : detail?.message || fallback;
-      throw Object.assign(new Error(message), { status: response.status });
+      throw Object.assign(new Error(message), { status: response.status, code: detail?.code, fields: detail?.fields || [] });
     }
     return body;
   } catch (error) {
@@ -71,3 +71,9 @@ export const placeOrder = (order, idempotencyKey) =>
 
 export const getOrder = (id) =>
   request(`/api/orders/${encodeURIComponent(id)}`);
+
+// Accounts and roles (login is session-based; the browser sends the session cookie automatically).
+export const register = (account) => request('/api/auth/register', { method: 'POST', body: JSON.stringify(account) });
+export const login = (email, password) => request('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+export const logout = () => request('/api/auth/logout', { method: 'POST' });
+export const getMe = () => request('/api/auth/me');
