@@ -18,6 +18,7 @@ import java.math.BigDecimal;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -28,6 +29,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
     "spring.jpa.hibernate.ddl-auto=create-drop"
 })
 @AutoConfigureMockMvc
+@SuppressWarnings("null")
 class CartApiIntegrationTest {
 
     @Autowired
@@ -63,6 +65,7 @@ class CartApiIntegrationTest {
         MockHttpSession session = new MockHttpSession();
 
         mockMvc.perform(put("/api/cart/items/{bookId}", book.getId())
+                .with(csrf())
                 .session(session)
                 .contentType(MediaType.APPLICATION_JSON_VALUE)
                 .content("{\"quantity\":2}"))
@@ -83,12 +86,14 @@ class CartApiIntegrationTest {
     }
 
     @Test
+    @SuppressWarnings("null")
     void rejectsInvalidQuantitiesUnknownBooksAndStockOverages() throws Exception {
         Book book = saveBook("Limited book", "8.00", 2);
         MockHttpSession session = new MockHttpSession();
 
         for (int quantity : new int[] {0, -1}) {
             mockMvc.perform(put("/api/cart/items/{bookId}", book.getId())
+                    .with(csrf())
                     .session(session)
                     .contentType(MediaType.APPLICATION_JSON_VALUE)
                     .content("{\"quantity\":" + quantity + "}"))
@@ -97,6 +102,7 @@ class CartApiIntegrationTest {
         }
 
         mockMvc.perform(put("/api/cart/items/{bookId}", 999L)
+                .with(csrf())
                 .session(session)
                 .contentType(MediaType.APPLICATION_JSON_VALUE)
                 .content("{\"quantity\":1}"))
@@ -104,6 +110,7 @@ class CartApiIntegrationTest {
             .andExpect(jsonPath("$.detail.code").value("book_not_found"));
 
         mockMvc.perform(put("/api/cart/items/{bookId}", book.getId())
+                .with(csrf())
                 .session(session)
                 .contentType(MediaType.APPLICATION_JSON_VALUE)
                 .content("{\"quantity\":3}"))
@@ -127,6 +134,7 @@ class CartApiIntegrationTest {
         putItem(session, second, 2);
 
         mockMvc.perform(delete("/api/cart/items/{bookId}", first.getId())
+                .with(csrf())
                 .session(session))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.items.length()").value(1))
@@ -138,7 +146,7 @@ class CartApiIntegrationTest {
             .andExpect(jsonPath("$.items").isEmpty())
             .andExpect(jsonPath("$.subtotal").value(0.0));
 
-        mockMvc.perform(delete("/api/cart").session(session))
+        mockMvc.perform(delete("/api/cart").with(csrf()).session(session))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.items").isEmpty())
             .andExpect(jsonPath("$.subtotal").value(0.0));
@@ -147,6 +155,7 @@ class CartApiIntegrationTest {
     private void putItem(MockHttpSession session, Book book, int quantity)
             throws Exception {
         mockMvc.perform(put("/api/cart/items/{bookId}", book.getId())
+                .with(csrf())
                 .session(session)
                 .contentType(MediaType.APPLICATION_JSON_VALUE)
                 .content("{\"quantity\":" + quantity + "}"))
