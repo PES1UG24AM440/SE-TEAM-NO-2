@@ -23,6 +23,7 @@ mysql -u bookstore_app -p < database/verify_setup.sql
 Every required table must report `OK`, and `books_in_catalogue` must be greater than 0.
 
 Already have an older `online_bookstore` database? Back it up, then apply `database/migrate_books_for_spring.sql` and `database/migrate_order_session_ownership.sql` (the verify script tells you if the second one is missing).
+To enable customer registration and authentication on an existing database, also apply `database/migrate_customer_users.sql`. New registrations always receive the `CUSTOMER` role. Promote trusted seller or administrator accounts only through an authorized database operation; never accept a role from a public registration request.
 
 ## 2. Spring Boot backend (Java 25, Maven 3.9+)
 

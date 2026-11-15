@@ -131,7 +131,17 @@ CREATE TABLE IF NOT EXISTS cart_lines (
     INDEX idx_cart_lines_cart_key (cart_key)
 );
 
--- 6. SEED BOOKS
+-- 6. CUSTOMER ACCOUNTS
+CREATE TABLE IF NOT EXISTS users (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(120) NOT NULL,
+    email VARCHAR(254) NOT NULL,
+    password_hash VARCHAR(60) NOT NULL,
+    role VARCHAR(20) NOT NULL DEFAULT 'CUSTOMER',
+    CONSTRAINT uq_users_email UNIQUE (email)
+);
+
+-- 7. SEED BOOKS
 INSERT INTO books (id, title, author, category, description, price, stock)
 VALUES
     (1, 'The Alchemist', 'Paulo Coelho', 'Fiction',

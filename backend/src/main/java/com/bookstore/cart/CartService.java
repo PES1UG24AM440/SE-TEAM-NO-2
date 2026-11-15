@@ -55,8 +55,10 @@ public class CartService {
             BigDecimal lineTotal = book.getPrice().multiply(BigDecimal.valueOf(line.getQuantity())).setScale(2, RoundingMode.HALF_UP);
             return new CartResponse.CartItem(book.getId(), book.getTitle(), book.getAuthor(), book.getPrice(), line.getQuantity(), lineTotal, book.getStock());
         }).toList();
-        BigDecimal subtotal = items.stream().map(CartResponse.CartItem::line_total).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
-        int count = items.stream().mapToInt(CartResponse.CartItem::quantity).sum();
+        BigDecimal subtotal = items.stream()
+                .map(item -> item.line_total())
+                .reduce(BigDecimal.ZERO, (total, lineTotal) -> total.add(lineTotal).setScale(2, RoundingMode.HALF_UP));
+        int count = items.stream().mapToInt(item -> item.quantity()).sum();
         return new CartResponse(items, count, subtotal);
     }
 
