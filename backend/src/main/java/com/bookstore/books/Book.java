@@ -39,6 +39,20 @@ public class Book {
     public BigDecimal getPrice() { return price; }
     public Integer getStock() { return stock; }
 
+    public boolean isInStock() {
+        return stock != null && stock > 0;
+    }
+
+    public String getAvailabilityStatus() {
+        if (stock == null || stock <= 0) {
+            return "OUT_OF_STOCK";
+        }
+        if (stock <= 5) {
+            return "LOW_STOCK";
+        }
+        return "IN_STOCK";
+    }
+
     public void setId(Long id) { this.id = id; }
     public void setTitle(String title) { this.title = title; }
     public void setAuthor(String author) { this.author = author; }

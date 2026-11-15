@@ -15,36 +15,41 @@ public interface BookRepository extends JpaRepository<Book, Long> {
            "(:q is null or lower(b.title) like lower(concat('%', :q, '%')) " +
            "or lower(b.author) like lower(concat('%', :q, '%')) " +
            "or lower(coalesce(b.description, '')) like lower(concat('%', :q, '%'))) " +
+           "and (:title is null or lower(b.title) like lower(concat('%', :title, '%'))) " +
+           "and (:author is null or lower(b.author) like lower(concat('%', :author, '%'))) " +
            "and (:category is null or lower(b.category) = lower(:category)) " +
            "order by b.title asc")
     List<Book> search(
             @Param("q") String q,
+            @Param("title") String title,
+            @Param("author") String author,
             @Param("category") String category
     );
 
     @Query("select b from Book b where b.id = :id")
     Optional<Book> findBookById(@Param("id") Long id);
-    @Modifying
-@Transactional
-@Query("""
-    UPDATE Book b
-    SET b.stock = b.stock - :quantity
-    WHERE b.id = :bookId AND b.stock >= :quantity
-""")
-int deductStock(
-    @Param("bookId") Long bookId,
-    @Param("quantity") int quantity
-);
 
-@Modifying
-@Transactional
-@Query("""
-    UPDATE Book b
-    SET b.stock = b.stock + :quantity
-    WHERE b.id = :bookId
-""")
-int restoreStock(
-    @Param("bookId") Long bookId,
-    @Param("quantity") int quantity
-);
+    @Modifying
+    @Transactional
+    @Query("""
+        UPDATE Book b
+        SET b.stock = b.stock - :quantity
+        WHERE b.id = :bookId AND b.stock >= :quantity
+    """)
+    int deductStock(
+        @Param("bookId") Long bookId,
+        @Param("quantity") int quantity
+    );
+
+    @Modifying
+    @Transactional
+    @Query("""
+        UPDATE Book b
+        SET b.stock = b.stock + :quantity
+        WHERE b.id = :bookId
+    """)
+    int restoreStock(
+        @Param("bookId") Long bookId,
+        @Param("quantity") int quantity
+    );
 }
