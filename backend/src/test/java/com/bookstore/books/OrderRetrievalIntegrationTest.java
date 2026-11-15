@@ -19,6 +19,7 @@ import java.util.Objects;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -70,6 +71,7 @@ class OrderRetrievalIntegrationTest {
         MockHttpSession otherSession = new MockHttpSession();
 
         var createResponse = mockMvc.perform(post("/api/orders")
+                .with(csrf())
                 .session(ownerSession)
                 .header("Idempotency-Key", "session-order")
                 .contentType(MediaType.APPLICATION_JSON_VALUE)
@@ -112,18 +114,21 @@ class OrderRetrievalIntegrationTest {
             .andExpect(jsonPath("$.length()").value(0));
 
         mockMvc.perform(post("/api/orders/{orderId}/cancel", orderId)
+                .with(csrf())
                 .session(otherSession))
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.detail.code").value("order_not_found"));
     }
 
     @Test
+    @SuppressWarnings("null")
     void idempotencyReplayDoesNotExposeAnotherSessionOrder() throws Exception {
         Book book = saveBook();
         MockHttpSession ownerSession = new MockHttpSession();
         MockHttpSession otherSession = new MockHttpSession();
 
         mockMvc.perform(post("/api/orders")
+                .with(csrf())
                 .session(ownerSession)
                 .header("Idempotency-Key", "private-session-key")
                 .contentType(MediaType.APPLICATION_JSON_VALUE)
@@ -131,6 +136,7 @@ class OrderRetrievalIntegrationTest {
             .andExpect(status().isCreated());
 
         mockMvc.perform(post("/api/orders")
+                .with(csrf())
                 .session(otherSession)
                 .header("Idempotency-Key", "private-session-key")
                 .contentType(MediaType.APPLICATION_JSON_VALUE)

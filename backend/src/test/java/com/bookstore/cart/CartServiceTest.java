@@ -46,13 +46,15 @@ class CartServiceTest {
     }
 
     @Test
+    @SuppressWarnings("null")
     void updatePersistsValidQuantityAndReturnsRecalculatedSubtotal() {
         when(books.findBookById(7L)).thenReturn(Optional.of(book));
         when(lines.findByCartKeyAndBookId(key, 7L)).thenReturn(Optional.empty());
         AtomicReference<CartLine> saved = new AtomicReference<>();
         when(lines.saveAndFlush(any(CartLine.class))).thenAnswer(call -> {
-            saved.set(call.getArgument(0));
-            return saved.get();
+            CartLine line = call.getArgument(0);
+            saved.set(line);
+            return line;
         });
         when(lines.findAllByCartKeyOrderById(key)).thenAnswer(call -> List.of(saved.get()));
 
@@ -63,11 +65,12 @@ class CartServiceTest {
     }
 
     @Test
+    @SuppressWarnings("null")
     void updateRejectsZeroAndOverStockQuantities() {
         when(books.findBookById(7L)).thenReturn(Optional.of(book));
 
         assertThrows(ResponseStatusException.class, () -> service.update(key, 7L, 0));
         assertThrows(ResponseStatusException.class, () -> service.update(key, 7L, 9));
-        verify(lines, never()).saveAndFlush(any());
+        verify(lines, never()).saveAndFlush(any(CartLine.class));
     }
 }
