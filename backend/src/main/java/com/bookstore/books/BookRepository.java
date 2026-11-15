@@ -1,5 +1,8 @@
 package com.bookstore.books;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -18,13 +21,29 @@ public interface BookRepository extends JpaRepository<Book, Long> {
            "and (:title is null or lower(b.title) like lower(concat('%', :title, '%'))) " +
            "and (:author is null or lower(b.author) like lower(concat('%', :author, '%'))) " +
            "and (:category is null or lower(b.category) = lower(:category)) " +
-           "and b.active = true " +
-           "order by b.title asc")
+           "and b.active = true")
     List<Book> search(
             @Param("q") String q,
             @Param("title") String title,
             @Param("author") String author,
-            @Param("category") String category
+            @Param("category") String category,
+            Sort sort
+    );
+
+    @Query("select b from Book b where " +
+           "(:q is null or lower(b.title) like lower(concat('%', :q, '%')) " +
+           "or lower(b.author) like lower(concat('%', :q, '%')) " +
+           "or lower(coalesce(b.description, '')) like lower(concat('%', :q, '%'))) " +
+           "and (:title is null or lower(b.title) like lower(concat('%', :title, '%'))) " +
+           "and (:author is null or lower(b.author) like lower(concat('%', :author, '%'))) " +
+           "and (:category is null or lower(b.category) = lower(:category)) " +
+           "and b.active = true")
+    Page<Book> searchPaged(
+            @Param("q") String q,
+            @Param("title") String title,
+            @Param("author") String author,
+            @Param("category") String category,
+            Pageable pageable
     );
 
     @Query("select b from Book b where b.id = :id")
