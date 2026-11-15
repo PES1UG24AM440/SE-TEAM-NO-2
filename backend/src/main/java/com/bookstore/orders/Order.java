@@ -1,7 +1,10 @@
 package com.bookstore.orders;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.CreationTimestamp;
+
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -59,6 +62,11 @@ public class Order {
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal total;
 
+    /** When the order was placed; used for the cancellation/refund window (#71). */
+    @CreationTimestamp
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt;
+
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL)
     private List<OrderItem> items = new ArrayList<>();
 
@@ -81,6 +89,7 @@ public class Order {
     public BigDecimal getDiscount() { return discount; }
     public BigDecimal getTotal() { return total; }
     public List<OrderItem> getItems() { return items; }
+    public Instant getCreatedAt() { return createdAt; }
 
     public void setId(String id) { this.id = id; }
     public void setCustomerName(String customerName) { this.customerName = customerName; }

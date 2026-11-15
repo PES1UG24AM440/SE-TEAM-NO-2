@@ -1,9 +1,9 @@
 package com.bookstore.books;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
@@ -18,6 +18,7 @@ public interface BookRepository extends JpaRepository<Book, Long> {
            "and (:title is null or lower(b.title) like lower(concat('%', :title, '%'))) " +
            "and (:author is null or lower(b.author) like lower(concat('%', :author, '%'))) " +
            "and (:category is null or lower(b.category) = lower(:category)) " +
+           "and b.active = true " +
            "order by b.title asc")
     List<Book> search(
             @Param("q") String q,
@@ -28,6 +29,16 @@ public interface BookRepository extends JpaRepository<Book, Long> {
 
     @Query("select b from Book b where b.id = :id")
     Optional<Book> findBookById(@Param("id") Long id);
+
+    /** Seller dashboard: every listing the seller owns, including deactivated ones. */
+    List<Book> findBySellerIdOrderByTitleAsc(Long sellerId);
+
+    /** Admin listing management: the whole catalogue, including deactivated listings. */
+    List<Book> findAllByOrderByTitleAsc();
+
+    long countByActiveTrue();
+
+    long countByActiveTrueAndStock(Integer stock);
 
     @Modifying
     @Transactional

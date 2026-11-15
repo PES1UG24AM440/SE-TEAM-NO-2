@@ -18,8 +18,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -31,6 +33,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -43,6 +46,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
     "spring.jpa.hibernate.ddl-auto=create-drop"
 })
 @AutoConfigureMockMvc
+
+
 class OrderCreationTransactionTest {
 
     @Autowired
@@ -98,6 +103,68 @@ class OrderCreationTransactionTest {
                     .isEqualTo(InventoryMovementType.ORDER_DEDUCTION);
                 assertThat(movement.getCreatedAt()).isNotNull();
             });
+    }
+
+    @Test
+    void quoteEndpointReturnsDatabasePricesAndServerCalculatedTotals() throws Exception {
+        Book book = saveBook("Quoted title", 4);
+        mockMvc.perform(post("/api/orders/quote")
+                .with(csrfRequestPostProcessor())
+                .contentType(MediaType.APPLICATION_JSON_VALUE)
+                .content("""
+                    {"items":[{"book_id":%d,"quantity":2}]}
+                    """.formatted(book.getId())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items[0].title").value("Quoted title"))
+            .andExpect(jsonPath("$.items[0].author").value("Regression Test"))
+            .andExpect(jsonPath("$.items[0].unit_price").value(10.00))
+            .andExpect(jsonPath("$.items[0].line_total").value(20.00))
+            .andExpect(jsonPath("$.subtotal").value(20.00))
+            .andExpect(jsonPath("$.total").value(20.00));
+        assertThat(stockOf(book)).isEqualTo(4);
+        assertNoOrderRecords();
+    }
+
+    @Test
+    void quoteRejectsUnavailableQuantityAndEmptyItems() throws Exception {
+        Book book = saveBook("Limited title", 1);
+        mockMvc.perform(post("/api/orders/quote")
+                .with(csrfRequestPostProcessor())
+                .contentType(MediaType.APPLICATION_JSON_VALUE)
+                .content("""
+                    {"items":[{"book_id":%d,"quantity":2}]}
+                    """.formatted(book.getId())))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.detail.code").value("insufficient_stock"));
+        mockMvc.perform(post("/api/orders/quote")
+                .with(csrfRequestPostProcessor())
+                .contentType(MediaType.APPLICATION_JSON_VALUE)
+                .content("{\"items\":[]}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.detail.code").value("validation_error"));
+    }
+
+    @Test
+    @SuppressWarnings("null")
+    void backendRejectsWhitespaceNameInvalidPhoneAndPostalCode() throws Exception {
+        Book book = saveBook("Validation title", 2);
+        String body = """
+            {"items":[{"book_id":%d,"quantity":1}],"customer":{
+              "name":"   ","email":"reader@example.com","phone":"-------",
+              "address_line":"1 Test Street","city":"London","state":"England",
+              "postal_code":"12!!!","country":"United Kingdom"},"payment_scenario":"success"}
+            """.formatted(book.getId());
+        mockMvc.perform(post("/api/orders")
+                .with(csrfRequestPostProcessor())
+                .header("Idempotency-Key", "invalid-customer-details")
+                .contentType(MediaType.APPLICATION_JSON_VALUE)
+                .content(Objects.requireNonNull(body)))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.detail.code").value("validation_error"))
+            .andExpect(jsonPath("$.detail.fields[*].field").value(org.hamcrest.Matchers.hasItems(
+                "customer.name", "customer.phone", "customer.postal_code")));
+        assertThat(stockOf(book)).isEqualTo(2);
+        assertNoOrderRecords();
     }
 
     @Test
@@ -168,6 +235,7 @@ class OrderCreationTransactionTest {
         assertThat(stockOf(book)).isEqualTo(3);
 
         mockMvc.perform(post("/api/orders/{orderId}/cancel", order.order_id())
+                .with(csrfRequestPostProcessor())
                 .session(session))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.status").value("CANCELLED"));
@@ -187,6 +255,7 @@ class OrderCreationTransactionTest {
             .containsExactlyInAnyOrder(-2, 2);
 
         mockMvc.perform(post("/api/orders/{orderId}/cancel", order.order_id())
+                .with(csrfRequestPostProcessor())
                 .session(session))
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.detail.code").value("invalid_status_transition"));
@@ -202,7 +271,7 @@ class OrderCreationTransactionTest {
         mockMvc.perform(post(
                 "/api/orders/{orderId}/cancel",
                 "missing-order"
-            ))
+            ).with(csrfRequestPostProcessor()))
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.detail.code").value("order_not_found"));
     }
@@ -224,6 +293,7 @@ class OrderCreationTransactionTest {
                 start.await();
                 return mockMvc.perform(
                     post("/api/orders/{orderId}/cancel", order.order_id())
+                        .with(csrfRequestPostProcessor())
                         .session(session)
                 ).andReturn();
             });
@@ -231,6 +301,7 @@ class OrderCreationTransactionTest {
                 start.await();
                 return mockMvc.perform(
                     post("/api/orders/{orderId}/cancel", order.order_id())
+                        .with(csrfRequestPostProcessor())
                         .session(session)
                 ).andReturn();
             });
@@ -305,6 +376,10 @@ class OrderCreationTransactionTest {
         ).orElseThrow()
             .getStatus().name()).isEqualTo("CONFIRMED");
         assertThat(movementsFor(orderResponse.order_id())).hasSize(2);
+    }
+
+    private RequestPostProcessor csrfRequestPostProcessor() {
+        return csrf();
     }
 
     private Book saveBook(String title, int stock) {

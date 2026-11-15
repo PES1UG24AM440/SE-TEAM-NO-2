@@ -1,5 +1,6 @@
 package com.bookstore.books;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import java.math.BigDecimal;
 
@@ -29,6 +30,14 @@ public class Book {
     @Column(nullable = false)
     private Integer stock;
 
+    /** The seller account that owns this listing; null for the store's original seed books (#72). */
+    @Column(name = "seller_id")
+    private Long sellerId;
+
+    /** Deactivated listings are hidden from the catalogue and cannot be ordered (#72). */
+    @Column(nullable = false)
+    private Boolean active = true;
+
     protected Book() {}
 
     public Long getId() { return id; }
@@ -38,6 +47,11 @@ public class Book {
     public String getDescription() { return description; }
     public BigDecimal getPrice() { return price; }
     public Integer getStock() { return stock; }
+    public Long getSellerId() { return sellerId; }
+    public Boolean getActive() { return active; }
+
+    @JsonIgnore
+    public boolean isListed() { return Boolean.TRUE.equals(active); }
 
     public boolean isInStock() {
         return stock != null && stock > 0;
@@ -60,4 +74,6 @@ public class Book {
     public void setDescription(String description) { this.description = description; }
     public void setPrice(BigDecimal price) { this.price = price; }
     public void setStock(Integer stock) { this.stock = stock; }
+    public void setSellerId(Long sellerId) { this.sellerId = sellerId; }
+    public void setActive(Boolean active) { this.active = active; }
 }

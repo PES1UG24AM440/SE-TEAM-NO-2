@@ -19,5 +19,7 @@ export default [
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
     },
   },
+  // Components used only as <Component /> look unused to the core rule (no eslint-plugin-react here).
+  { files: ['src/**/*.{js,jsx}'], rules: { 'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z]' }] } },
   { files: ['src/main.jsx', 'src/App.test.jsx'], rules: { 'no-unused-vars': ['error', { varsIgnorePattern: '^(React|App)$' }] } },
 ];

@@ -41,7 +41,9 @@ public class BookController {
         if (id == null || id <= 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Book ID must be a positive number");
         }
+        // Deactivated listings are treated as not found by the public catalogue.
         return books.findBookById(id)
+                .filter(Book::isListed)
                 .orElseThrow(() ->
                         new ResponseStatusException(
                                 HttpStatus.NOT_FOUND,

@@ -14,6 +14,10 @@ CREATE TABLE IF NOT EXISTS books (
     description TEXT NULL,
     price DECIMAL(10,2) NOT NULL,
     stock INT NOT NULL,
+    seller_id BIGINT NULL,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+
+    INDEX idx_books_seller_id (seller_id),
 
     CONSTRAINT ck_books_stock_nonnegative
         CHECK (stock >= 0),
@@ -43,6 +47,7 @@ CREATE TABLE IF NOT EXISTS orders (
     tax DECIMAL(10,2) NOT NULL,
     discount DECIMAL(10,2) NOT NULL,
     total DECIMAL(10,2) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     INDEX idx_orders_owner_session_id (owner_session_id)
 );
@@ -117,7 +122,82 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
         ON DELETE RESTRICT
 );
 
--- 5. SEED BOOKS
+-- 5. PERSISTENT ANONYMOUS CART LINES
+CREATE TABLE IF NOT EXISTS cart_lines (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    cart_key VARCHAR(36) NOT NULL,
+    book_id BIGINT NOT NULL,
+    quantity INT NOT NULL,
+
+    CONSTRAINT fk_cart_lines_book
+        FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE,
+    CONSTRAINT ck_cart_lines_quantity_positive CHECK (quantity > 0),
+    UNIQUE KEY uq_cart_lines_cart_book (cart_key, book_id),
+    INDEX idx_cart_lines_cart_key (cart_key)
+);
+
+-- 6. USER ACCOUNTS AND ROLES (login / RBAC, SRS OBS-F-002 and OBS-SR-002)
+CREATE TABLE IF NOT EXISTS users (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    email VARCHAR(254) NOT NULL,
+    password_hash VARCHAR(100) NOT NULL,
+    display_name VARCHAR(120) NOT NULL,
+    role VARCHAR(20) NOT NULL,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT uq_users_email UNIQUE (email),
+    CONSTRAINT ck_users_role CHECK (role IN ('CUSTOMER', 'SELLER', 'ADMIN'))
+);
+
+-- Seller listings (#72): each listing may belong to a seller account.
+-- (Added here because users is created after books.)
+SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints
+                  WHERE table_schema = DATABASE() AND table_name = 'books'
+                    AND constraint_name = 'fk_books_seller');
+SET @sql = IF(@fk_exists = 0,
+    'ALTER TABLE books ADD CONSTRAINT fk_books_seller FOREIGN KEY (seller_id) REFERENCES users(id) ON DELETE RESTRICT',
+    'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- 7. ADMINISTRATOR AUDIT LOG (#73). actor_email is copied so entries stay readable.
+CREATE TABLE IF NOT EXISTS audit_log (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    actor_user_id BIGINT NOT NULL,
+    actor_email VARCHAR(254) NOT NULL,
+    action VARCHAR(50) NOT NULL,
+    target_type VARCHAR(30) NOT NULL,
+    target_id VARCHAR(64) NOT NULL,
+    details VARCHAR(500) NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    INDEX idx_audit_log_created (created_at),
+    INDEX idx_audit_log_target (target_type, target_id)
+);
+
+-- 8. REFUNDS FOR CANCELLED ORDERS (#71)
+CREATE TABLE IF NOT EXISTS refunds (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    order_id VARCHAR(36) NOT NULL,
+    order_total DECIMAL(10,2) NOT NULL,
+    shipping_withheld DECIMAL(10,2) NOT NULL,
+    cancellation_fee DECIMAL(10,2) NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    refund_type VARCHAR(10) NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    -- One refund per order: a repeated cancellation can never create a second refund.
+    CONSTRAINT uq_refunds_order UNIQUE (order_id),
+    CONSTRAINT fk_refunds_order
+        FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE RESTRICT,
+    CONSTRAINT ck_refunds_amount_nonnegative CHECK (amount >= 0),
+    CONSTRAINT ck_refunds_amount_not_above_total CHECK (amount <= order_total),
+    CONSTRAINT ck_refunds_type CHECK (refund_type IN ('FULL', 'PARTIAL')),
+    CONSTRAINT ck_refunds_status CHECK (status IN ('REFUNDED'))
+);
+
+-- 9. SEED BOOKS
 INSERT INTO books (id, title, author, category, description, price, stock)
 VALUES
     (1, 'The Alchemist', 'Paulo Coelho', 'Fiction',
