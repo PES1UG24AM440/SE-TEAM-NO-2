@@ -9,6 +9,7 @@ import com.bookstore.books.ListingService;
 import com.bookstore.orders.OrderException;
 import com.bookstore.orders.OrderRepository;
 import com.bookstore.orders.OrderStatus;
+import com.bookstore.orders.RefundRepository;
 import com.bookstore.users.AppUser;
 import com.bookstore.users.Role;
 import com.bookstore.users.UserRepository;
@@ -34,6 +35,7 @@ public class AdminService {
     private final ListingService listings;
     private final AuditService audit;
     private final AuditLogRepository auditLog;
+    private final RefundRepository refunds;
 
     public AdminService(
             UserRepository users,
@@ -41,13 +43,15 @@ public class AdminService {
             OrderRepository orders,
             ListingService listings,
             AuditService audit,
-            AuditLogRepository auditLog) {
+            AuditLogRepository auditLog,
+            RefundRepository refunds) {
         this.users = users;
         this.books = books;
         this.orders = orders;
         this.listings = listings;
         this.audit = audit;
         this.auditLog = auditLog;
+        this.refunds = refunds;
     }
 
     @Transactional(readOnly = true)
@@ -55,6 +59,7 @@ public class AdminService {
         long totalBooks = books.count();
         long activeBooks = books.countByActiveTrue();
         BigDecimal revenue = orders.sumTotalByStatus(OrderStatus.CONFIRMED);
+        BigDecimal refunded = refunds.sumAmounts();
         return new AdminSummaryResponse(
             new AdminSummaryResponse.BookSummary(
                 totalBooks, activeBooks, totalBooks - activeBooks, books.countByActiveTrueAndStock(0)),
@@ -68,7 +73,8 @@ public class AdminService {
                 orders.count(),
                 orders.countByStatus(OrderStatus.CONFIRMED),
                 orders.countByStatus(OrderStatus.CANCELLED),
-                (revenue == null ? BigDecimal.ZERO : revenue).setScale(2, RoundingMode.HALF_UP)));
+                (revenue == null ? BigDecimal.ZERO : revenue).setScale(2, RoundingMode.HALF_UP),
+                (refunded == null ? BigDecimal.ZERO : refunded).setScale(2, RoundingMode.HALF_UP)));
     }
 
     // ---- users ----

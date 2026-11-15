@@ -4,7 +4,9 @@ import com.bookstore.books.BookRepository;
 import com.bookstore.orders.dto.AdminOrderResponse;
 import com.bookstore.orders.dto.CreateOrderRequest;
 import com.bookstore.orders.dto.OrderResponse;
+import com.bookstore.orders.dto.RefundResponse;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -21,18 +23,24 @@ public class OrderService {
     private final InventoryMovementRepository inventoryMovementRepository;
     private final OrderRepository orderRepository;
     private final OrderCreationService orderCreationService;
+    private final RefundRepository refundRepository;
+    private final RefundPolicy refundPolicy;
 
     public OrderService(
             BookRepository bookRepository,
             IdempotencyKeyRepository idempotencyRepository,
             InventoryMovementRepository inventoryMovementRepository,
             OrderRepository orderRepository,
-            OrderCreationService orderCreationService) {
+            OrderCreationService orderCreationService,
+            RefundRepository refundRepository,
+            RefundPolicy refundPolicy) {
         this.bookRepository = bookRepository;
         this.idempotencyRepository = idempotencyRepository;
         this.inventoryMovementRepository = inventoryMovementRepository;
         this.orderRepository = orderRepository;
         this.orderCreationService = orderCreationService;
+        this.refundRepository = refundRepository;
+        this.refundPolicy = refundPolicy;
     }
 
     public OrderResponse createOrder(
@@ -126,7 +134,23 @@ public class OrderService {
             .orElse(null);
     }
 
+    /**
+     * Cancels the order, restores stock and records the refund (#71) in ONE transaction, so either
+     * all three happen or none do. The caller holds a row lock on the order, the status can only
+     * move CONFIRMED -> CANCELLED once, and refunds.order_id is unique: repeating a cancellation
+     * can never create a second refund.
+     */
     private OrderResponse cancelOrder(Order order) {
+        if (order.getStatus() == OrderStatus.CONFIRMED
+                && !refundPolicy.isWithinCancellationWindow(order, Instant.now())) {
+            throw new OrderException(
+                409,
+                "cancellation_not_eligible",
+                "Orders can only be cancelled within " + refundPolicy.cancellationWindowHours()
+                    + " hours of being placed."
+            );
+        }
+
         order.transitionTo(OrderStatus.CANCELLED);
 
         var restockMovements = new ArrayList<InventoryMovement>();
@@ -151,6 +175,10 @@ public class OrderService {
         }
 
         inventoryMovementRepository.saveAllAndFlush(restockMovements);
+
+        if (!refundRepository.existsByOrder_Id(order.getId())) {
+            refundRepository.saveAndFlush(refundPolicy.refundFor(order));
+        }
         return toResponse(order);
     }
 
@@ -208,7 +236,11 @@ public class OrderService {
                     item.getUnitPrice(),
                     item.getLineTotal()
                 ))
-                .toList()
+                .toList(),
+            order.getCreatedAt(),
+            refundRepository.findByOrder_Id(order.getId())
+                .map(RefundResponse::from)
+                .orElse(null)
         );
     }
 }

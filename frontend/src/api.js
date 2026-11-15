@@ -94,3 +94,6 @@ export const updateAdminBook = (id, listing) => request(`/api/admin/books/${enco
 export const setBookActive = (id, active) => request(`/api/admin/books/${encodeURIComponent(id)}/${active ? 'activate' : 'deactivate'}`, { method: 'POST' });
 export const getAdminOrders = () => request('/api/admin/orders');
 export const getAuditLog = () => request('/api/admin/audit-log');
+
+// Order cancellation and refund (#71). The server calculates the refund from the stored order totals.
+export const cancelOrder = (id) => request(`/api/orders/${encodeURIComponent(id)}/cancel`, { method: 'POST' });

@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS orders (
     tax DECIMAL(10,2) NOT NULL,
     discount DECIMAL(10,2) NOT NULL,
     total DECIMAL(10,2) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     INDEX idx_orders_owner_session_id (owner_session_id)
 );
@@ -174,7 +175,29 @@ CREATE TABLE IF NOT EXISTS audit_log (
     INDEX idx_audit_log_target (target_type, target_id)
 );
 
--- 8. SEED BOOKS
+-- 8. REFUNDS FOR CANCELLED ORDERS (#71)
+CREATE TABLE IF NOT EXISTS refunds (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    order_id VARCHAR(36) NOT NULL,
+    order_total DECIMAL(10,2) NOT NULL,
+    shipping_withheld DECIMAL(10,2) NOT NULL,
+    cancellation_fee DECIMAL(10,2) NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    refund_type VARCHAR(10) NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    -- One refund per order: a repeated cancellation can never create a second refund.
+    CONSTRAINT uq_refunds_order UNIQUE (order_id),
+    CONSTRAINT fk_refunds_order
+        FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE RESTRICT,
+    CONSTRAINT ck_refunds_amount_nonnegative CHECK (amount >= 0),
+    CONSTRAINT ck_refunds_amount_not_above_total CHECK (amount <= order_total),
+    CONSTRAINT ck_refunds_type CHECK (refund_type IN ('FULL', 'PARTIAL')),
+    CONSTRAINT ck_refunds_status CHECK (status IN ('REFUNDED'))
+);
+
+-- 9. SEED BOOKS
 INSERT INTO books (id, title, author, category, description, price, stock)
 VALUES
     (1, 'The Alchemist', 'Paulo Coelho', 'Fiction',

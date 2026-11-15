@@ -9,5 +9,6 @@ public record AdminSummaryResponse(BookSummary books, UserSummary users, OrderSu
 
     public record UserSummary(long total, long customers, long sellers, long admins, long deactivated) {}
 
-    public record OrderSummary(long total, long confirmed, long cancelled, BigDecimal confirmed_revenue) {}
+    public record OrderSummary(long total, long confirmed, long cancelled, BigDecimal confirmed_revenue,
+                               BigDecimal refunded_total) {}
 }

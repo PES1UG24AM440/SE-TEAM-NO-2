@@ -76,7 +76,7 @@ export default function AdminDashboard({ currentUserId, onCatalogueChanged = () 
       <h3>Users</h3>
       <div className="summary-tiles"><Tile label="Accounts" value={summary.users.total} /><Tile label="Customers" value={summary.users.customers} /><Tile label="Sellers" value={summary.users.sellers} /><Tile label="Admins" value={summary.users.admins} /><Tile label="Deactivated" value={summary.users.deactivated} /></div>
       <h3>Orders</h3>
-      <div className="summary-tiles"><Tile label="Orders" value={summary.orders.total} /><Tile label="Confirmed" value={summary.orders.confirmed} /><Tile label="Cancelled" value={summary.orders.cancelled} /><Tile label="Confirmed revenue" value={currency(summary.orders.confirmed_revenue)} /></div>
+      <div className="summary-tiles"><Tile label="Orders" value={summary.orders.total} /><Tile label="Confirmed" value={summary.orders.confirmed} /><Tile label="Cancelled" value={summary.orders.cancelled} /><Tile label="Confirmed revenue" value={currency(summary.orders.confirmed_revenue)} /><Tile label="Refunded" value={currency(summary.orders.refunded_total)} /></div>
     </>}
 
     {tab === 'users' && data.users && <div className="table-scroll"><table className="data-table">
@@ -106,13 +106,14 @@ export default function AdminDashboard({ currentUserId, onCatalogueChanged = () 
 
     {tab === 'orders' && data.orders && (data.orders.length === 0 ? <p className="account-meta">No orders yet.</p>
       : <div className="table-scroll"><table className="data-table">
-        <thead><tr><th>Order</th><th>Customer</th><th>Items</th><th>Total</th><th>Status</th></tr></thead>
+        <thead><tr><th>Order</th><th>Customer</th><th>Items</th><th>Total</th><th>Status</th><th>Refund</th></tr></thead>
         <tbody>{data.orders.map(({ order, customer_name, email, shipping_address }) => <tr key={order.order_id}>
           <td><code>{order.order_id}</code></td>
           <td>{customer_name}<br /><small>{email}</small><br /><small>{shipping_address}</small></td>
           <td>{order.items.map((item) => <div key={item.book_id}>{item.title} × {item.quantity}</div>)}</td>
           <td>{currency(order.total)}</td>
           <td><span className={order.status === 'CONFIRMED' ? 'status-pill' : 'status-pill off'}>{order.status}</span></td>
+          <td>{order.refund ? `${currency(order.refund.amount)} (${order.refund.type.toLowerCase()})` : '—'}</td>
         </tr>)}</tbody>
       </table></div>)}
 

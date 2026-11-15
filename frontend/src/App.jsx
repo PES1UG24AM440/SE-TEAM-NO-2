@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { clearCart as clearCartRequest, getBook, getBooks, getCart, getMe, getOrder, getOrderQuote, placeOrder, removeCartItem, updateCartItem } from './api.js';
+import { cancelOrder, clearCart as clearCartRequest, getBook, getBooks, getCart, getMe, getOrder, getOrderQuote, placeOrder, removeCartItem, updateCartItem } from './api.js';
 import AccountPanel from './AccountPanel.jsx';
 import SellerDashboard from './SellerDashboard.jsx';
 import AdminDashboard from './AdminDashboard.jsx';
@@ -110,6 +110,8 @@ export default function App() {
   const [lookupError, setLookupError] = useState('');
   const [lookupLoading, setLookupLoading] = useState(false);
   const [user, setUser] = useState(null);
+  const [confirmCancelId, setConfirmCancelId] = useState(null);
+  const [cancellingId, setCancellingId] = useState(null);
 
   useEffect(() => {
     // A 401 just means nobody is signed in; guests can still browse and check out.
@@ -354,8 +356,34 @@ export default function App() {
     }).finally(() => setLookupLoading(false));
   }
 
+  function cancel(order) {
+    setCancellingId(order.order_id); setNotice('');
+    cancelOrder(order.order_id)
+      .then((updated) => {
+        setOrders((current) => current.map((entry) => (entry.order?.order_id === updated.order_id ? { ...entry, order: updated } : entry)));
+        setNotice(updated.refund ? `Order cancelled. Refund of ${currency(updated.refund.amount)} issued.` : 'Order cancelled.');
+        return getBooks({ q: query, category }).then((list) => { setBooks(list); remember(list); }).catch(() => {});
+      })
+      .catch((error) => setNotice(error.message))
+      .finally(() => { setCancellingId(null); setConfirmCancelId(null); });
+  }
+
+  function refundDetails(refund) {
+    return <div className="refund-box" aria-label="Refund details"><strong>Refund {refund.status === 'REFUNDED' ? 'issued' : refund.status.toLowerCase()}: {currency(refund.amount)}</strong> <small>({refund.type === 'FULL' ? 'full refund' : 'partial refund'})</small>
+      <div className="summary-line"><span>Amount paid</span><span>{currency(refund.order_total)}</span></div>
+      {refund.shipping_withheld > 0 && <div className="summary-line"><span>Shipping (not refunded)</span><span>−{currency(refund.shipping_withheld)}</span></div>}
+      {refund.cancellation_fee > 0 && <div className="summary-line"><span>Cancellation fee</span><span>−{currency(refund.cancellation_fee)}</span></div>}
+      <div className="summary-line"><span>Refunded</span><strong>{currency(refund.amount)}</strong></div></div>;
+  }
+
   function orderCard(order, key) {
-    return <article className="order-card" key={key}><div className="order-heading"><div><span>Order ID</span><strong>{order.order_id}</strong></div><div><span>Status</span><strong>{order.status}</strong></div><div><span>Total</span><strong>{currency(order.total)}</strong></div></div><div className="order-items">{(order.items || []).map((item) => <div className="summary-line" key={item.book_id}><span>{item.title} <small>× {item.quantity}</small></span><span>{currency(item.line_total)}</span></div>)}</div></article>;
+    const busy = cancellingId === order.order_id;
+    return <article className="order-card" key={key}><div className="order-heading"><div><span>Order ID</span><strong>{order.order_id}</strong></div><div><span>Status</span><strong>{order.status}</strong></div><div><span>Total</span><strong>{currency(order.total)}</strong></div></div><div className="order-items">{(order.items || []).map((item) => <div className="summary-line" key={item.book_id}><span>{item.title} <small>× {item.quantity}</small></span><span>{currency(item.line_total)}</span></div>)}</div>
+      {order.refund && refundDetails(order.refund)}
+      {order.status === 'CONFIRMED' && (confirmCancelId === order.order_id
+        ? <div className="row-actions"><span>Cancel this order? Stock is returned and a refund is calculated.</span><button className="primary-button" onClick={() => cancel(order)} disabled={busy}>{busy ? 'Cancelling…' : 'Yes, cancel order'}</button><button className="text-button" onClick={() => setConfirmCancelId(null)} disabled={busy}>Keep order</button></div>
+        : <button className="text-button" onClick={() => setConfirmCancelId(order.order_id)} aria-label={`Cancel order ${order.order_id}`}>Cancel order</button>)}
+    </article>;
   }
 
   return <div className="site-shell">

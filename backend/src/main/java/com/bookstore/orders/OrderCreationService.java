@@ -207,7 +207,9 @@ public class OrderCreationService {
             order.getTax(),
             order.getDiscount(),
             order.getTotal(),
-            items
+            items,
+            order.getCreatedAt(),
+            null
         );
     }
 }

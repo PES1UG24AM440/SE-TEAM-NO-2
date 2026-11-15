@@ -22,7 +22,7 @@ mysql -u bookstore_app -p < database/verify_setup.sql
 
 Every required table must report `OK`, and `books_in_catalogue` must be greater than 0.
 
-Already have an older `online_bookstore` database? Back it up, then apply `database/migrate_books_for_spring.sql` `database/migrate_order_session_ownership.sql` and `database/migrate_auth_users.sql`, then `database/migrate_seller_listings.sql` and `database/migrate_admin_audit_log.sql` (the verify script tells you if the second one is missing).
+Already have an older `online_bookstore` database? Back it up, then apply `database/migrate_books_for_spring.sql` `database/migrate_order_session_ownership.sql` and `database/migrate_auth_users.sql`, then `database/migrate_seller_listings.sql` , `database/migrate_admin_audit_log.sql` and `database/migrate_refunds.sql` (the verify script tells you if the second one is missing).
 
 ## 2. Spring Boot backend (Java 25, Maven 3.9+)
 
@@ -101,6 +101,26 @@ in the same transaction as the change itself.
 | POST | `/api/admin/books/{id}/activate` · `/deactivate` | Relist / remove any listing |
 | GET | `/api/admin/orders` · `/api/admin/orders/{id}` | Inspect orders from every customer |
 | GET | `/api/admin/audit-log` | Latest 200 administrative actions |
+
+### Cancellation and refunds (#71)
+
+On **Orders**, a confirmed order shows **Cancel order** (with a confirmation step). Cancelling
+sets the status to CANCELLED, puts the stock back and stores a refund, all in one database
+transaction. The refund is calculated from the totals saved on the order at checkout
+(subtotal + shipping + tax − discount), never from today's book prices. Cancelling again is
+rejected with **409** and can never create a second refund (`refunds.order_id` is unique).
+
+The SRS leaves the refund rules to the Product Owner, so they are settings. The defaults refund
+everything the customer paid:
+
+| Setting (environment variable) | Default | Meaning |
+| --- | --- | --- |
+| `BOOKSTORE_REFUND_SHIPPING` | `true` | `false` keeps the shipping charge |
+| `BOOKSTORE_CANCELLATION_FEE_RATE` | `0` | e.g. `0.10` keeps 10% of the refundable amount |
+| `BOOKSTORE_CANCELLATION_WINDOW_HOURS` | `0` | e.g. `24`: orders older than 24 h cannot be cancelled (0 = no limit) |
+
+A refund is **FULL** when the whole amount paid comes back, otherwise **PARTIAL**. Payment is
+simulated, so the refund status is `REFUNDED` immediately.
 
 ## 3. React frontend (Node 20+)
 

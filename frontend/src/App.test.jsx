@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App.jsx';
 import {
+  cancelOrder,
   clearCart,
   getBook,
   getBooks,
@@ -17,6 +18,7 @@ import {
 // Real exports are kept (and the ones App uses are replaced) so new api.js functions do not break this mock.
 vi.mock('./api.js', async (importOriginal) => ({
   ...(await importOriginal()),
+  cancelOrder: vi.fn(),
   clearCart: vi.fn(),
   getBook: vi.fn(),
   getBooks: vi.fn(),
@@ -538,5 +540,52 @@ describe('role-based navigation', () => {
     render(<App />);
     expect(await screen.findByRole('button', { name: 'Admin' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Seller dashboard' })).toBeNull();
+  });
+});
+
+describe('order cancellation and refund (#71)', () => {
+  const confirmed = { order_id: 'order-71', status: 'CONFIRMED', subtotal: 200, shipping: 40, tax: 10, discount: 10, total: 240, items: [{ book_id: 1, title: 'The Alchemist', quantity: 2, unit_price: 100, line_total: 200 }], refund: null };
+  const partialRefund = { amount: 180, status: 'REFUNDED', type: 'PARTIAL', order_total: 240, shipping_withheld: 40, cancellation_fee: 20, created_at: '2026-11-15T03:00:00Z' };
+
+  beforeEach(() => {
+    localStorage.setItem('fieldnotes-order-ids', JSON.stringify(['order-71']));
+  });
+
+  it('asks for confirmation, cancels, and shows the refund breakdown', async () => {
+    getOrder.mockResolvedValue(confirmed);
+    cancelOrder.mockResolvedValue({ ...confirmed, status: 'CANCELLED', refund: partialRefund });
+    const user = userEvent.setup(); render(<App />);
+    await user.click(await screen.findByRole('button', { name: 'Orders' }));
+    await user.click(await screen.findByRole('button', { name: 'Cancel order order-71' }));
+    expect(cancelOrder).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Yes, cancel order' }));
+
+    expect(cancelOrder).toHaveBeenCalledWith('order-71');
+    expect(await screen.findByText('Order cancelled. Refund of ₹180.00 issued.')).toBeInTheDocument();
+    const refund = screen.getByLabelText('Refund details');
+    expect(refund).toHaveTextContent('partial refund');
+    expect(refund).toHaveTextContent('Shipping (not refunded)');
+    expect(refund).toHaveTextContent('Cancellation fee');
+    expect(screen.queryByRole('button', { name: 'Cancel order order-71' })).toBeNull();
+  });
+
+  it('keeps the order when the server says it is not eligible', async () => {
+    getOrder.mockResolvedValue(confirmed);
+    cancelOrder.mockRejectedValue(Object.assign(new Error('Orders can only be cancelled within 24 hours of being placed.'), { status: 409 }));
+    const user = userEvent.setup(); render(<App />);
+    await user.click(await screen.findByRole('button', { name: 'Orders' }));
+    await user.click(await screen.findByRole('button', { name: 'Cancel order order-71' }));
+    await user.click(screen.getByRole('button', { name: 'Yes, cancel order' }));
+    expect(await screen.findByText('Orders can only be cancelled within 24 hours of being placed.')).toBeInTheDocument();
+    expect(screen.getByText('CONFIRMED')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Refund details')).toBeNull();
+  });
+
+  it('shows the stored refund on an already cancelled order and offers no cancel button', async () => {
+    getOrder.mockResolvedValue({ ...confirmed, status: 'CANCELLED', refund: { ...partialRefund, type: 'FULL', amount: 240, shipping_withheld: 0, cancellation_fee: 0 } });
+    const user = userEvent.setup(); render(<App />);
+    await user.click(await screen.findByRole('button', { name: 'Orders' }));
+    expect(await screen.findByLabelText('Refund details')).toHaveTextContent('full refund');
+    expect(screen.queryByRole('button', { name: 'Cancel order order-71' })).toBeNull();
   });
 });
