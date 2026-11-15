@@ -19,5 +19,5 @@ export default [
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
     },
   },
-  { files: ['src/main.jsx', 'src/App.test.jsx'], rules: { 'no-unused-vars': ['error', { varsIgnorePattern: '^(React|App)$' }] } },
+  { files: ['src/main.jsx', 'src/App.jsx', 'src/App.test.jsx'], rules: { 'no-unused-vars': ['error', { varsIgnorePattern: '^(React|App|RegistrationForm|LoginForm)$' }] } },
 ];

@@ -7,9 +7,13 @@ import {
   getBook,
   getBooks,
   getCart,
+  getCurrentUser,
   getOrder,
   getOrderQuote,
+  login,
+  logout,
   placeOrder,
+  register,
   removeCartItem,
   updateCartItem,
 } from './api.js';
@@ -18,9 +22,13 @@ vi.mock('./api.js', () => ({
   getBook: vi.fn(),
   getBooks: vi.fn(),
   getCart: vi.fn(),
+  getCurrentUser: vi.fn(),
   getOrder: vi.fn(),
   getOrderQuote: vi.fn(),
+  login: vi.fn(),
+  logout: vi.fn(),
   placeOrder: vi.fn(),
+  register: vi.fn(),
   removeCartItem: vi.fn(),
   updateCartItem: vi.fn(),
 }));
@@ -47,6 +55,7 @@ beforeEach(() => {
 
   getBooks.mockResolvedValue(fixture);
   getCart.mockResolvedValue({ items: [], subtotal: 0 });
+  getCurrentUser.mockRejectedValue(Object.assign(new Error('Authentication is required.'), { status: 401 }));
   getOrder.mockResolvedValue({});
 
   getOrderQuote.mockImplementation((items) =>
@@ -438,6 +447,98 @@ describe('saved books and wishlist', () => {
     await user.click(screen.getByRole('button', { name: 'Wishlist, 1 saved book' }));
     expect(screen.getByRole('button', { name: 'Add to Cart' })).toBeDisabled();
     expect(screen.getByText('Out of stock')).toBeInTheDocument();
+  });
+});
+
+describe('customer registration', () => {
+  it('validates required fields and password strength before submitting', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: 'Register' }));
+    await user.click(screen.getByRole('button', { name: 'Create account' }));
+
+    expect(screen.getByText('Name is required.')).toBeInTheDocument();
+    expect(screen.getByText('Email is required.')).toBeInTheDocument();
+    expect(screen.getByText('Password is required.')).toBeInTheDocument();
+    expect(register).not.toHaveBeenCalled();
+  });
+
+  it('submits valid registration and returns to the bookshelf', async () => {
+    const user = userEvent.setup();
+    register.mockResolvedValue({ id: 1, name: 'Ada Reader', email: 'ada@example.com' });
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: 'Register' }));
+    await user.type(screen.getByLabelText(/Full name/), 'Ada Reader');
+    await user.type(screen.getByLabelText(/^Email/), 'ada@example.com');
+    await user.type(screen.getByLabelText(/^Password/), 'SecurePass1!');
+    await user.click(screen.getByRole('button', { name: 'Create account' }));
+
+    expect(register).toHaveBeenCalledWith({
+      name: 'Ada Reader',
+      email: 'ada@example.com',
+      password: 'SecurePass1!',
+    });
+    expect(await screen.findByText('Account created for Ada Reader.')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Find your next favourite' })).toBeInTheDocument();
+  });
+
+  it('shows duplicate email errors from the server', async () => {
+    const user = userEvent.setup();
+    register.mockRejectedValue(Object.assign(
+      new Error('An account with this email already exists.'),
+      { status: 409 },
+    ));
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: 'Register' }));
+    await user.type(screen.getByLabelText(/Full name/), 'Ada Reader');
+    await user.type(screen.getByLabelText(/^Email/), 'ada@example.com');
+    await user.type(screen.getByLabelText(/^Password/), 'SecurePass1!');
+    await user.click(screen.getByRole('button', { name: 'Create account' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'An account with this email already exists.',
+    );
+    expect(screen.getByRole('button', { name: 'Create account' })).toBeEnabled();
+  });
+});
+
+describe('customer authentication', () => {
+  it('signs in and signs out using the session-backed account', async () => {
+    const user = userEvent.setup();
+    login.mockResolvedValue({
+      id: 1,
+      name: 'Ada Reader',
+      email: 'ada@example.com',
+      role: 'CUSTOMER',
+    });
+    logout.mockResolvedValue(undefined);
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: 'Sign in' }));
+    await user.type(screen.getByLabelText('Email'), 'ada@example.com');
+    await user.type(screen.getByLabelText('Password'), 'SecurePass1!');
+    fireEvent.submit(screen.getByLabelText('Email').closest('form'));
+
+    expect(await screen.findByLabelText('Signed in as Ada Reader')).toBeInTheDocument();
+    expect(login).toHaveBeenCalledWith({
+      email: 'ada@example.com',
+      password: 'SecurePass1!',
+    });
+    await user.click(screen.getByRole('button', { name: 'Sign out' }));
+    expect(await screen.findByRole('button', { name: 'Sign in' })).toBeInTheDocument();
+    expect(logout).toHaveBeenCalledOnce();
+  });
+
+  it('displays invalid credential errors without signing in', async () => {
+    login.mockRejectedValue(Object.assign(new Error('Invalid email or password.'), { status: 401 }));
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: 'Sign in' }));
+    await user.type(screen.getByLabelText('Email'), 'ada@example.com');
+    await user.type(screen.getByLabelText('Password'), 'wrong');
+    fireEvent.submit(screen.getByLabelText('Email').closest('form'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Invalid email or password.');
+    expect(screen.queryByLabelText('Signed in as Ada Reader')).not.toBeInTheDocument();
   });
 });
 
