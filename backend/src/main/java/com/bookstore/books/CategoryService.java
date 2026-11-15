@@ -38,7 +38,7 @@ public class CategoryService {
         return CategoryResponse.from(category, count);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public Category resolveForListing(Long categoryId, String categoryNameOrSlug) {
         if (categoryId != null) {
             if (categoryId <= 0) {
@@ -63,12 +63,15 @@ public class CategoryService {
             throw new OrderException(400, "invalid_category", "Category or categoryId is required.");
         }
 
-        return categories.findByNameOrSlug(categoryNameOrSlug.trim())
-                .orElseThrow(() -> new OrderException(
-                        400,
-                        "invalid_category",
-                        "Unknown category '" + categoryNameOrSlug.trim() + "'. Retrieve valid categories from GET /api/categories."
-                ));
+        String trimmed = categoryNameOrSlug.trim();
+        return categories.findByNameOrSlug(trimmed)
+                .orElseGet(() -> {
+                    String slug = buildSlug(trimmed);
+                    return categories.findBySlugIgnoreCase(slug)
+                            .orElseGet(() -> categories.saveAndFlush(
+                                    new Category(trimmed, slug, "Books and titles in the " + trimmed + " category.")
+                            ));
+                });
     }
 
     @Transactional

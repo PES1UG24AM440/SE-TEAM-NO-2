@@ -23,6 +23,7 @@ public record ListingRequest(
     @Size(max = 160, message = "Author must be 160 characters or fewer.")
     String author,
 
+    @NotBlank(message = "Category is required.")
     @Size(max = 100, message = "Category must be 100 characters or fewer.")
     String category,
 
