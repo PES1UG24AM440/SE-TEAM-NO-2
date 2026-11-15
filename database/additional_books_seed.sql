@@ -171,3 +171,17 @@ ON DUPLICATE KEY UPDATE
     category = VALUES(category),
     description = VALUES(description),
     price = VALUES(price);
+
+-- Sync structured categories & category_id references for seeded books (#46)
+INSERT IGNORE INTO categories (name, slug, description)
+SELECT DISTINCT
+    TRIM(b.category),
+    LOWER(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(b.category), '''', ''), '&', 'and'), ' ', '-'), '--', '-')),
+    CONCAT('Books and titles in the ', TRIM(b.category), ' category.')
+FROM books b
+WHERE b.category IS NOT NULL AND TRIM(b.category) <> '';
+
+UPDATE books b
+JOIN categories c ON LOWER(TRIM(b.category)) = LOWER(c.name)
+SET b.category_id = c.id
+WHERE b.category_id IS NULL;

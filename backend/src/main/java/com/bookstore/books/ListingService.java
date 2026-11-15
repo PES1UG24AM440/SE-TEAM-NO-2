@@ -9,16 +9,17 @@ import java.util.Objects;
 
 /**
  * Creating, editing and (de)activating book listings.
- * Sellers go through the *Own methods, which check ownership on the server (#72);
- * administrators use the unrestricted methods (#73).
+ * Enforces valid structured category associations (#46).
  */
 @Service
 public class ListingService {
 
     private final BookRepository books;
+    private final CategoryService categoryService;
 
-    public ListingService(BookRepository books) {
+    public ListingService(BookRepository books, CategoryService categoryService) {
         this.books = books;
+        this.categoryService = categoryService;
     }
 
     // ---- seller (#72) ----
@@ -87,10 +88,11 @@ public class ListingService {
             .orElseThrow(() -> new OrderException(404, "book_not_found", "Book ID " + bookId + " was not found."));
     }
 
-    private static void apply(Book book, ListingRequest request) {
+    private void apply(Book book, ListingRequest request) {
+        Category resolvedCategory = categoryService.resolveForListing(request.categoryId(), request.category());
         book.setTitle(request.title().trim());
         book.setAuthor(request.author().trim());
-        book.setCategory(request.category().trim());
+        book.setCategoryEntity(resolvedCategory);
         book.setDescription(request.description() == null || request.description().isBlank()
             ? null : request.description().trim());
         book.setPrice(request.price());

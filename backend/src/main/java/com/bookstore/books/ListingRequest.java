@@ -12,7 +12,7 @@ import java.math.BigDecimal;
 
 /**
  * Body of POST/PUT /api/seller/books and PUT /api/admin/books/{id}.
- * Validated on the server with @Valid; the limits match the columns in the books table.
+ * Supports structured categoryId as well as category name/slug (#46).
  */
 public record ListingRequest(
     @NotBlank(message = "Title is required.")
@@ -23,9 +23,10 @@ public record ListingRequest(
     @Size(max = 160, message = "Author must be 160 characters or fewer.")
     String author,
 
-    @NotBlank(message = "Category is required.")
     @Size(max = 100, message = "Category must be 100 characters or fewer.")
     String category,
+
+    Long categoryId,
 
     @Size(max = 2000, message = "Description must be 2000 characters or fewer.")
     String description,
@@ -39,4 +40,14 @@ public record ListingRequest(
     @Min(value = 0, message = "Stock cannot be negative.")
     @Max(value = 100000, message = "Stock must be 100000 or fewer.")
     Integer stock
-) {}
+) {
+    public ListingRequest(
+            String title,
+            String author,
+            String category,
+            String description,
+            BigDecimal price,
+            Integer stock) {
+        this(title, author, category, null, description, price, stock);
+    }
+}

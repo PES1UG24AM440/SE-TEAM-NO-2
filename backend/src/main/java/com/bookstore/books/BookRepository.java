@@ -14,35 +14,41 @@ import java.util.Optional;
 
 public interface BookRepository extends JpaRepository<Book, Long> {
 
-    @Query("select b from Book b where " +
+    @Query("select b from Book b left join b.categoryEntity c where " +
            "(:q is null or lower(b.title) like lower(concat('%', :q, '%')) " +
            "or lower(b.author) like lower(concat('%', :q, '%')) " +
            "or lower(coalesce(b.description, '')) like lower(concat('%', :q, '%'))) " +
            "and (:title is null or lower(b.title) like lower(concat('%', :title, '%'))) " +
            "and (:author is null or lower(b.author) like lower(concat('%', :author, '%'))) " +
-           "and (:category is null or lower(b.category) = lower(:category)) " +
+           "and (:categoryId is null or c.id = :categoryId) " +
+           "and (:category is null or lower(b.category) = lower(:category) " +
+           "or (c is not null and (lower(c.name) = lower(:category) or lower(c.slug) = lower(:category)))) " +
            "and b.active = true")
     List<Book> search(
             @Param("q") String q,
             @Param("title") String title,
             @Param("author") String author,
             @Param("category") String category,
+            @Param("categoryId") Long categoryId,
             Sort sort
     );
 
-    @Query("select b from Book b where " +
+    @Query("select b from Book b left join b.categoryEntity c where " +
            "(:q is null or lower(b.title) like lower(concat('%', :q, '%')) " +
            "or lower(b.author) like lower(concat('%', :q, '%')) " +
            "or lower(coalesce(b.description, '')) like lower(concat('%', :q, '%'))) " +
            "and (:title is null or lower(b.title) like lower(concat('%', :title, '%'))) " +
            "and (:author is null or lower(b.author) like lower(concat('%', :author, '%'))) " +
-           "and (:category is null or lower(b.category) = lower(:category)) " +
+           "and (:categoryId is null or c.id = :categoryId) " +
+           "and (:category is null or lower(b.category) = lower(:category) " +
+           "or (c is not null and (lower(c.name) = lower(:category) or lower(c.slug) = lower(:category)))) " +
            "and b.active = true")
     Page<Book> searchPaged(
             @Param("q") String q,
             @Param("title") String title,
             @Param("author") String author,
             @Param("category") String category,
+            @Param("categoryId") Long categoryId,
             Pageable pageable
     );
 
@@ -58,6 +64,8 @@ public interface BookRepository extends JpaRepository<Book, Long> {
     long countByActiveTrue();
 
     long countByActiveTrueAndStock(Integer stock);
+
+    long countByCategoryEntity_IdAndActiveTrue(Long categoryId);
 
     @Modifying
     @Transactional

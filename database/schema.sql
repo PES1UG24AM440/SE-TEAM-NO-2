@@ -1,9 +1,20 @@
-
 CREATE DATABASE IF NOT EXISTS online_bookstore
     CHARACTER SET utf8mb4
     COLLATE utf8mb4_unicode_ci;
 
 USE online_bookstore;
+
+-- 0. CATEGORIES & GENRES (#46)
+CREATE TABLE IF NOT EXISTS categories (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(100) NOT NULL,
+    slug VARCHAR(120) NOT NULL,
+    description VARCHAR(500) NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT uq_categories_name UNIQUE (name),
+    CONSTRAINT uq_categories_slug UNIQUE (slug)
+);
 
 -- 1. BOOKS
 CREATE TABLE IF NOT EXISTS books (
@@ -11,6 +22,7 @@ CREATE TABLE IF NOT EXISTS books (
     title VARCHAR(200) NOT NULL,
     author VARCHAR(160) NOT NULL,
     category VARCHAR(100) NOT NULL DEFAULT 'Uncategorized',
+    category_id BIGINT NULL,
     description TEXT NULL,
     price DECIMAL(10,2) NOT NULL,
     stock INT NOT NULL,
@@ -18,6 +30,12 @@ CREATE TABLE IF NOT EXISTS books (
     active BOOLEAN NOT NULL DEFAULT TRUE,
 
     INDEX idx_books_seller_id (seller_id),
+    INDEX idx_books_category_id (category_id),
+
+    CONSTRAINT fk_books_category
+        FOREIGN KEY (category_id)
+        REFERENCES categories(id)
+        ON DELETE RESTRICT,
 
     CONSTRAINT ck_books_stock_nonnegative
         CHECK (stock >= 0),
@@ -151,7 +169,6 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 -- Seller listings (#72): each listing may belong to a seller account.
--- (Added here because users is created after books.)
 SET @fk_exists = (SELECT COUNT(*) FROM information_schema.table_constraints
                   WHERE table_schema = DATABASE() AND table_name = 'books'
                     AND constraint_name = 'fk_books_seller');
@@ -187,7 +204,6 @@ CREATE TABLE IF NOT EXISTS refunds (
     status VARCHAR(20) NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    -- One refund per order: a repeated cancellation can never create a second refund.
     CONSTRAINT uq_refunds_order UNIQUE (order_id),
     CONSTRAINT fk_refunds_order
         FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE RESTRICT,
@@ -197,16 +213,29 @@ CREATE TABLE IF NOT EXISTS refunds (
     CONSTRAINT ck_refunds_status CHECK (status IN ('REFUNDED'))
 );
 
--- 9. SEED BOOKS
-INSERT INTO books (id, title, author, category, description, price, stock)
+-- 9. SEED CATEGORIES & BOOKS
+INSERT INTO categories (id, name, slug, description)
 VALUES
-    (1, 'The Alchemist', 'Paulo Coelho', 'Fiction',
+    (1, 'Fiction', 'fiction', 'Literary and contemporary fiction works.'),
+    (2, 'Self-Help', 'self-help', 'Personal development, habits, and productivity.'),
+    (3, 'Technology', 'technology', 'Software engineering, computing, and systems.'),
+    (4, 'Fantasy', 'fantasy', 'Speculative and epic fantasy worlds.'),
+    (5, 'Programming', 'programming', 'Software development languages, algorithms, and design patterns.'),
+    (6, 'Uncategorized', 'uncategorized', 'General books awaiting specific genre classification.')
+ON DUPLICATE KEY UPDATE
+    name = VALUES(name),
+    description = VALUES(description);
+
+INSERT INTO books (id, title, author, category, category_id, description, price, stock)
+VALUES
+    (1, 'The Alchemist', 'Paulo Coelho', 'Fiction', 1,
      'A philosophical novel about following your dreams.', 299.00, 8),
-    (2, 'Atomic Habits', 'James Clear', 'Self-Help',
+    (2, 'Atomic Habits', 'James Clear', 'Self-Help', 2,
      'A practical guide to building good habits.', 450.00, 5),
-    (3, 'Clean Code', 'Robert C. Martin', 'Technology',
+    (3, 'Clean Code', 'Robert C. Martin', 'Technology', 3,
      'A guide to writing clean and maintainable software.', 650.00, 3),
-    (4, 'The Hobbit', 'J. R. R. Tolkien', 'Fantasy',
+    (4, 'The Hobbit', 'J. R. R. Tolkien', 'Fantasy', 4,
      'A fantasy adventure about Bilbo Baggins.', 399.00, 6)
 ON DUPLICATE KEY UPDATE
-    title = VALUES(title);
+    title = VALUES(title),
+    category_id = VALUES(category_id);

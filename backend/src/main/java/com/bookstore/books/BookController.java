@@ -23,9 +23,11 @@ public class BookController {
     private static final Set<String> ALLOWED_SORT_FIELDS = Set.of("title", "price");
 
     private final BookRepository books;
+    private final CategoryRepository categories;
 
-    public BookController(BookRepository books) {
+    public BookController(BookRepository books, CategoryRepository categories) {
         this.books = books;
+        this.categories = categories;
     }
 
     @GetMapping
@@ -34,6 +36,7 @@ public class BookController {
             @RequestParam(required = false) String title,
             @RequestParam(required = false) String author,
             @RequestParam(required = false) String category,
+            @RequestParam(required = false) Long categoryId,
             @RequestParam(required = false) Integer page,
             @RequestParam(required = false) Integer size,
             @RequestParam(defaultValue = "title") String sortBy,
@@ -46,12 +49,14 @@ public class BookController {
                 (category == null || category.isBlank() || category.equalsIgnoreCase("All"))
                         ? null : category.trim();
 
+        validateCategoryFilter(categoryId);
+
         String normalizedSortBy = validateSortBy(sortBy);
         String normalizedDirection = validateDirection(direction);
         Sort sort = buildSort(normalizedSortBy, normalizedDirection);
 
         if (page == null && size == null) {
-            return books.search(normalizedQ, normalizedTitle, normalizedAuthor, normalizedCategory, sort);
+            return books.search(normalizedQ, normalizedTitle, normalizedAuthor, normalizedCategory, categoryId, sort);
         }
 
         int resolvedPage = (page == null) ? DEFAULT_PAGE : page;
@@ -60,7 +65,7 @@ public class BookController {
 
         Pageable pageable = PageRequest.of(resolvedPage, resolvedSize, sort);
         Page<Book> resultPage = books.searchPaged(
-                normalizedQ, normalizedTitle, normalizedAuthor, normalizedCategory, pageable);
+                normalizedQ, normalizedTitle, normalizedAuthor, normalizedCategory, categoryId, pageable);
 
         return BookPageResponse.from(resultPage, normalizedSortBy, normalizedDirection);
     }
@@ -71,6 +76,7 @@ public class BookController {
             @RequestParam(required = false) String title,
             @RequestParam(required = false) String author,
             @RequestParam(required = false) String category,
+            @RequestParam(required = false) Long categoryId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(defaultValue = "title") String sortBy,
@@ -83,13 +89,15 @@ public class BookController {
                 (category == null || category.isBlank() || category.equalsIgnoreCase("All"))
                         ? null : category.trim();
 
+        validateCategoryFilter(categoryId);
+
         String normalizedSortBy = validateSortBy(sortBy);
         String normalizedDirection = validateDirection(direction);
         validatePagination(page, size);
 
         Pageable pageable = PageRequest.of(page, size, buildSort(normalizedSortBy, normalizedDirection));
         Page<Book> resultPage = books.searchPaged(
-                normalizedQ, normalizedTitle, normalizedAuthor, normalizedCategory, pageable);
+                normalizedQ, normalizedTitle, normalizedAuthor, normalizedCategory, categoryId, pageable);
 
         return BookPageResponse.from(resultPage, normalizedSortBy, normalizedDirection);
     }
@@ -113,6 +121,21 @@ public class BookController {
     public ResponseEntity<Object> handleInvalidParameter(MethodArgumentTypeMismatchException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(Map.of("error", "Invalid request parameter '" + ex.getName() + "'"));
+    }
+
+    private void validateCategoryFilter(Long categoryId) {
+        if (categoryId == null) {
+            return;
+        }
+        if (categoryId <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Category ID must be a positive number");
+        }
+        if (!categories.existsById(categoryId)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Category ID " + categoryId + " does not exist"
+            );
+        }
     }
 
     private static String normalize(String value) {
