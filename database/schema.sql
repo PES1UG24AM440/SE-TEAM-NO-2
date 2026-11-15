@@ -213,6 +213,26 @@ CREATE TABLE IF NOT EXISTS refunds (
     CONSTRAINT ck_refunds_status CHECK (status IN ('REFUNDED'))
 );
 
+-- 8B. BOOK REVIEWS AND RATINGS (#47)
+CREATE TABLE IF NOT EXISTS book_reviews (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    book_id BIGINT NOT NULL,
+    user_id BIGINT NULL,
+    reviewer_name VARCHAR(120) NOT NULL,
+    rating INT NOT NULL,
+    comment TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_book_reviews_book
+        FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE,
+    CONSTRAINT fk_book_reviews_user
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+    CONSTRAINT ck_book_reviews_rating_range
+        CHECK (rating >= 1 AND rating <= 5),
+
+    INDEX idx_book_reviews_book_created (book_id, created_at)
+);
+
 -- 9. SEED CATEGORIES & BOOKS
 INSERT INTO categories (id, name, slug, description)
 VALUES
