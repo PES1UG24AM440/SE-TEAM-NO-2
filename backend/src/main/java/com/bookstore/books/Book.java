@@ -21,6 +21,11 @@ public class Book {
     @Column(nullable = false, length = 100)
     private String category;
 
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "category_id")
+    @JsonIgnore
+    private Category categoryEntity;
+
     @Column(columnDefinition = "TEXT")
     private String description;
 
@@ -43,19 +48,49 @@ public class Book {
     public Long getId() { return id; }
     public String getTitle() { return title; }
     public String getAuthor() { return author; }
-    public String getCategory() { return category; }
+    public String getCategory() {
+        return categoryEntity != null ? categoryEntity.getName() : category;
+    }
+    public Long getCategoryId() {
+        return categoryEntity != null ? categoryEntity.getId() : null;
+    }
+    public String getCategorySlug() {
+        return categoryEntity != null ? categoryEntity.getSlug() : null;
+    }
+    public Category getCategoryEntity() { return categoryEntity; }
     public String getDescription() { return description; }
     public BigDecimal getPrice() { return price; }
     public Integer getStock() { return stock; }
     public Long getSellerId() { return sellerId; }
     public Boolean getActive() { return active; }
+
     @JsonIgnore
     public boolean isListed() { return Boolean.TRUE.equals(active); }
+
+    public boolean isInStock() {
+        return stock != null && stock > 0;
+    }
+
+    public String getAvailabilityStatus() {
+        if (stock == null || stock <= 0) {
+            return "OUT_OF_STOCK";
+        }
+        if (stock <= 5) {
+            return "LOW_STOCK";
+        }
+        return "IN_STOCK";
+    }
 
     public void setId(Long id) { this.id = id; }
     public void setTitle(String title) { this.title = title; }
     public void setAuthor(String author) { this.author = author; }
     public void setCategory(String category) { this.category = category; }
+    public void setCategoryEntity(Category categoryEntity) {
+        this.categoryEntity = categoryEntity;
+        if (categoryEntity != null) {
+            this.category = categoryEntity.getName();
+        }
+    }
     public void setDescription(String description) { this.description = description; }
     public void setPrice(BigDecimal price) { this.price = price; }
     public void setStock(Integer stock) { this.stock = stock; }
